@@ -1,0 +1,60 @@
+{
+  "name": "@redheartsecretman/session-title-agents",
+  "version": "0.1.0",
+  "description": "Template-shaped session titles for DeepSeek Harness: a fixed [date][type] topic format with a controlled type vocabulary, CJK spacing, and optional backfill.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "session-title",
+    "cordis"
+  ],
+  "license": "MIT",
+  "author": "RedHeartSecretMan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RedHeartSecretMan/dsh-plugins.git",
+    "directory": "plugins/session-title-agents"
+  },
+  "homepage": "https://github.com/RedHeartSecretMan/dsh-plugins/tree/main/plugins/session-title-agents#readme",
+  "bugs": {
+    "url": "https://github.com/RedHeartSecretMan/dsh-plugins/issues"
+  },
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./lib/*": "./lib/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "docs/*.md",
+    "scripts/verify-runtime.mjs",
+    "LICENSE"
+  ],
+  "icon": "./icon.svg",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "check": "node --check index.js && node --check lib/title.js && node --check lib/config.js && node --check lib/state.js && node --check lib/backfill.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.1-rc.3 <0.3.0"
+  }
+}

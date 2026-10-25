@@ -1,0 +1,10 @@
+# Dependencies, if a plugin ever gains any
+node_modules/
+
+# Plugin runtime state: state and logs belong under $DSH_HOME, never in the tree
+backfill.log
+backfill-state.json
+
+*.tmp
+.DS_Store
+Thumbs.db

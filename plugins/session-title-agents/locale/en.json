@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "session-title-agents",
+    "description": "Names every session as [date][type] topic, with a controlled type vocabulary, CJK spacing, and optional backfill."
+  }
+}

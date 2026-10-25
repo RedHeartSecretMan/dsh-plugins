@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "session-title-agents",
+    "description": "将会话标题统一命名为 [日期][类型] 主题，带受控类型词表、中英混排空格与可选的历史回填。"
+  }
+}
