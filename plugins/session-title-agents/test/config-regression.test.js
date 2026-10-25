@@ -1,6 +1,41 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { resolveConfig } from "../lib/config.js";
+import { DEFAULTS, resolveConfig } from "../lib/config.js";
+
+it("defaults AGENTS naming guidance and freezes independent resolved settings", () => {
+  assert.deepEqual(DEFAULTS.agentsInstructions, { enabled: true, maxBytes: 4096 });
+  const defaults = resolveConfig();
+  assert.deepEqual(defaults.agentsInstructions, { enabled: true, maxBytes: 4096 });
+  assert.deepEqual(resolveConfig({ agentsInstructions: {} }).agentsInstructions, defaults.agentsInstructions);
+  assert.deepEqual(resolveConfig({ agentsInstructions: { enabled: false } }).agentsInstructions, { enabled: false, maxBytes: 4096 });
+  assert.deepEqual(resolveConfig({ agentsInstructions: { maxBytes: 8192 } }).agentsInstructions, { enabled: true, maxBytes: 8192 });
+  const input = { enabled: true, maxBytes: 1024 };
+  const resolved = resolveConfig({ agentsInstructions: input });
+  input.enabled = false;
+  input.maxBytes = 256;
+  assert.deepEqual(resolved.agentsInstructions, { enabled: true, maxBytes: 1024 });
+  assert.ok(Object.isFrozen(resolved.agentsInstructions));
+  assert.throws(() => { resolved.agentsInstructions.enabled = false; }, TypeError);
+  assert.notStrictEqual(defaults.agentsInstructions, DEFAULTS.agentsInstructions);
+  assert.notStrictEqual(defaults.agentsInstructions, resolveConfig().agentsInstructions);
+});
+
+it("strictly validates AGENTS naming guidance fields and byte boundaries", () => {
+  for (const value of [null, false, "enabled", [], 4096]) {
+    assert.throws(() => resolveConfig({ agentsInstructions: value }), /agentsInstructions must be an object/u);
+  }
+  assert.throws(() => resolveConfig({ agentsInstructions: { enable: true } }), /agentsInstructions\.enable is an unknown key/u);
+  for (const enabled of [null, "false", 0, 1]) {
+    assert.throws(() => resolveConfig({ agentsInstructions: { enabled } }), /agentsInstructions\.enabled must be a boolean/u);
+  }
+  for (const maxBytes of [256, 65536]) {
+    assert.equal(resolveConfig({ agentsInstructions: { maxBytes } }).agentsInstructions.maxBytes, maxBytes);
+  }
+  for (const maxBytes of [255, 65537, 256.5, NaN, Infinity, "4096", null]) {
+    assert.throws(() => resolveConfig({ agentsInstructions: { maxBytes } }), /agentsInstructions\.maxBytes must be an integer from 256 to 65536/u);
+  }
+  assert.throws(() => resolveConfig({ agentsInstructions: { enabled: false, maxBytes: 0 } }), /agentsInstructions\.maxBytes/u);
+});
 
 it("maps legacy aliases to the existing public config and rejects conflicting values", () => {
   const resolved = resolveConfig({

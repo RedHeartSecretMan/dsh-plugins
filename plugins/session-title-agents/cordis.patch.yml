@@ -23,6 +23,11 @@
         maxOutputTokens: 64
         timeoutMs: 60000
         maxProvisionalRefinements: 4
+        # Read only matching AGENTS naming excerpts as supplemental guidance.
+        # false disables both excerpts and main-agent naming coordination.
+        agentsInstructions:
+          enabled: true
+          maxBytes: 4096
         # Backfill is opt-in. It reads eligibility before resuming closed idle
         # root sessions, preserves pinned titles, and marks only durable writes.
         backfill:

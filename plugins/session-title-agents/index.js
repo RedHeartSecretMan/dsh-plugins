@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { resolveConfig } from './lib/config.js';
 import { createStateStore, stateDirectory } from './lib/state.js';
+import { createInstructionReader } from './lib/instructions.js';
 import { backfillTitles } from './lib/backfill.js';
 import { buildFallbackTitle, buildSystemPrompt, compileTitlePattern, formatDate, frameMessages, isFormattedTitle, isSettledTitle, parseModelTitle, selectContextMessages } from './lib/title.js';
 
@@ -76,6 +77,17 @@ export function apply(ctx, rawConfig) {
   const state = createStateStore({ directory: stateDirectory({ ...process.env, ...(profileDirectory ? { DSH_PROFILE_DIR: profileDirectory } : {}) }) });
   const pattern = compileTitlePattern(config.template, config.types.map(type => type.key));
   const activeRetitles = new Map();
+  const readInstructions = config.agentsInstructions.enabled ? createInstructionReader() : undefined;
+  if (config.agentsInstructions.enabled) {
+    ctx.inject?.(['systemPrompt'], (promptCtx) => {
+      promptCtx.systemPrompt.section({
+        name: `${name}:coordination`,
+        order: promptCtx.systemPrompt.getSectionOrder('TOOL_SESSION_QUERY') + 1,
+        interpolate: false,
+        text: 'Automatic session naming is managed by session-title-agents. Do not call a session rename tool merely to satisfy standing session-naming rules in AGENTS.md; the title provider reads applicable naming excerpts itself. When the user explicitly asks to rename the session, use the supported rename interface. Continue to follow all other applicable workspace instructions.',
+      });
+    });
+  }
   const titleOptions = (date) => ({ pattern, date, template: config.template, types: config.types, cjkSpacing: config.cjkSpacing, topicMaxChars: config.topicMaxChars });
   let backfillRun;
   let timer;
@@ -111,7 +123,12 @@ export function apply(ctx, rawConfig) {
         if (current && isFormattedTitle(current.title, options)) return { title: current.title, messageSeqs };
         return { title: buildFallbackTitle({ date, template: config.template, fallbackType: config.fallbackType, sourceText: messages[0].text, cjkSpacing: config.cjkSpacing, topicMaxChars: config.topicMaxChars }), messageSeqs };
       }
-      const system = buildSystemPrompt({ ...config, template: config.template, dateLabel: date, typeLabel: config.types[0].key, topicLabel: config.language === 'en' ? 'Topic' : '主题', isRefining: messages.length > 1, hint });
+      const cwd = readInstructions ? (ctx.get?.('workingDirectory')?.get?.(request.session) ?? request.session.header?.cwd) : undefined;
+      const namingGuidance = readInstructions ? await readInstructions({ cwd, signal, maxBytes: config.agentsInstructions.maxBytes }) : undefined;
+      signal.throwIfAborted();
+      if (namingGuidance?.unavailable) state.note('agents-instructions-unavailable');
+      const currentTitle = current ? { title: current.title, canonical: isFormattedTitle(current.title, options) } : undefined;
+      const system = buildSystemPrompt({ ...config, template: config.template, dateLabel: date, typeLabel: config.types[0].key, topicLabel: config.language === 'en' ? 'Topic' : '主题', isRefining: messages.length > 1, hint, namingGuidance, currentTitle });
       const input = frameMessages(selected);
       const routes = [route];
       if (fallbackRoute && (route.provider !== fallbackRoute.provider || route.model !== fallbackRoute.model)) routes.push(fallbackRoute);

@@ -33,6 +33,7 @@ export const DEFAULTS = {
   maxOutputTokens: 64,
   timeoutMs: 60000,
   maxProvisionalRefinements: 4,
+  agentsInstructions: { enabled: true, maxBytes: 4096 },
   backfill: { enabled: false },
 };
 
@@ -171,6 +172,19 @@ export function resolveConfig(config) {
   if (topicMaxChars < topicMinChars) invalid("topicMaxChars", "must not be smaller than topicMinChars");
 
   if ((raw.provider === undefined) !== (raw.model === undefined)) invalid("provider", "and config.model must be supplied together");
+  const agentsInstructionsRaw = raw.agentsInstructions === undefined ? {} : raw.agentsInstructions;
+  if (typeof agentsInstructionsRaw !== "object" || agentsInstructionsRaw === null || Array.isArray(agentsInstructionsRaw)) {
+    invalid("agentsInstructions", "must be an object");
+  }
+  rejectUnknown(agentsInstructionsRaw, ["enabled", "maxBytes"], "agentsInstructions");
+  const agentsInstructionsEnabled = agentsInstructionsRaw.enabled === undefined
+    ? DEFAULTS.agentsInstructions.enabled : agentsInstructionsRaw.enabled;
+  if (typeof agentsInstructionsEnabled !== "boolean") invalid("agentsInstructions.enabled", "must be a boolean");
+  const agentsInstructionsMaxBytes = requireInteger(
+    agentsInstructionsRaw.maxBytes === undefined ? DEFAULTS.agentsInstructions.maxBytes : agentsInstructionsRaw.maxBytes,
+    "agentsInstructions.maxBytes", 256, 65536,
+  );
+
   const backfillRaw = raw.backfill === undefined || raw.backfill === null ? {} : raw.backfill;
   if (typeof backfillRaw !== "object" || Array.isArray(backfillRaw)) invalid("backfill", "must be an object");
   rejectUnknown(backfillRaw, ["enabled", "fallbackRoute", "retitle"], "backfill");
@@ -208,6 +222,10 @@ export function resolveConfig(config) {
     maxOutputTokens: requireInteger(raw.maxOutputTokens === undefined ? DEFAULTS.maxOutputTokens : raw.maxOutputTokens, "maxOutputTokens", 8, 4096),
     timeoutMs: requireInteger(raw.timeoutMs === undefined ? DEFAULTS.timeoutMs : raw.timeoutMs, "timeoutMs", 1000, 600000),
     maxProvisionalRefinements: requireInteger(refinementLimit, "maxProvisionalRefinements", 1, 100),
+    agentsInstructions: Object.freeze({
+      enabled: agentsInstructionsEnabled,
+      maxBytes: agentsInstructionsMaxBytes,
+    }),
     backfill: Object.freeze({
       enabled: backfillEnabled,
       ...(backfillRoute === undefined ? {} : { fallbackRoute: backfillRoute }),

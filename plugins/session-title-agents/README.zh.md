@@ -14,10 +14,10 @@
 
 需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.3.0`，不对更高版本的内部接口作保证。
 
-包名为 `@redheartsecretman/session-title-agents`，当前版本为 `0.1.0`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.1.0/session-title-agents-0.1.0.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-title-agents`，当前版本为 `0.2.0`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.0/session-title-agents-0.2.0.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.1.0/session-title-agents-0.1.0.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.0/session-title-agents-0.2.0.tgz
 ```
 
 也可以从仓库目录安装：
@@ -51,6 +51,8 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 | `maxOutputTokens` | `64` | 请求输出上限；选择模型支持的最低推理档位 |
 | `timeoutMs` | `60000` | 每个候选路由的一次请求时限 |
 | `maxProvisionalRefinements` | `4` | 保持旧版语义：只在最初 N 条合格用户消息内细化暂定标题，**不是改写次数计数器** |
+| `agentsInstructions.enabled` | `true` | 读取适用的 AGENTS 命名片段并添加主代理命名协调；`false` 同时关闭两者 |
+| `agentsInstructions.maxBytes` | `4096` | 最终补充指导文本的 UTF-8 字节上限，必须是 `256` 至 `65536` 的整数 |
 | `backfill.enabled` | `false` | 启动后执行一次历史维护 |
 | `backfill.fallbackRoute` | 未设置 | `{ provider, model }`；同时是普通标题请求的备用路由 |
 | `backfill.retitle` | `[]` | 定点重命名列表 `[{ id, hint }]`，仅在启用回填时执行 |
@@ -74,6 +76,22 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 ```
 
 默认词表为功能、设计、修复、优化、发布、运维、探索、文档、研究。`探索` 带 `provisional: true`。已有**日期正确、格式规范**的具体类型标题会保留；暂定标题在消息数上限内继续细化。模型输出可宽容解析全角括号、缺日期和 Markdown 包裹，但已有标题使用严格校验，错误日期不会被当作“已定稿”。
+
+## AGENTS 命名指导
+
+插件继续负责自动命名。在需要生成标题或细化暂定标题时，读取适用的 `AGENTS.md` 和 `AGENTS.local.md` 中的命名片段。通过懒加载使用 Harness 内置 `@deepseek-ai/dsh-agent-instructions` SDK 的公开发现 helper，必要时从 profile 回退解析，不新增需安装的运行依赖。该 helper 先发现 `DSH_HOME`、`DSH_AGENTS_HOME` 下的全局 `AGENTS.md`，随后按默认 `.git` 根目录到当前工作目录的范围查找项目文件；不读取其他指令文件名。这里使用 Host 可见路径和 SDK 默认的基础指令链，不复刻远端文件系统或主代理因文件操作额外发现的更深作用域。
+
+Markdown 段落标题需同时包含“会话”或“对话”与“命名”或“标题”，或同时包含 session 或 conversation 与 naming 或 title，才会提取对应片段。英文匹配不区分大小写，忽略围栏代码块中的标题。也可用以下标记明确指定命名片段：
+
+```markdown
+<!-- session-title-agents:start -->
+优先用简短主题概括用户当前的任务。
+<!-- session-title-agents:end -->
+```
+
+只把命中的命名片段加入补充提示，不注入无关的工程指令。`agentsInstructions.maxBytes` 限制最终补充文本的 UTF-8 字节数，优先保留作用域更具体的片段。源文件读取有大小上限，发现流程设软超时；没有命中规则、SDK 或读取失败以及超时，均沿用现有命名行为。仅在需要生成时重新读取，不缓存文件内容，也不持续监听。修改文件本身不会触发现有规范定稿 provider 标题重新生成。
+
+AGENTS 规则可以影响主题措辞和暂定标题细化，但不能覆盖配置的模板、创建日期、类型词表、主题长度限制或手动标题固定状态。新增的 `systemPrompt` 协调段要求主代理在只有常驻 AGENTS 规则要求改名时，把自动命名交给插件；用户明确要求改名时仍允许执行。这段内容是指导，不会阻断重命名 API；完全替换系统提示词的部署可能不包含该段。设置 `agentsInstructions.enabled: false` 会同时关闭补充片段和协调段。插件不会修改 AGENTS 文件。
 
 ## 模型失败和标题归属
 
@@ -105,7 +123,7 @@ $DSH_PROFILE_DIR/state/session-title-agents/backfill.log
 
 ## 开发和验证
 
-无安装依赖、无构建步骤：
+无须安装依赖、无构建步骤；可选 AGENTS 功能使用 Harness 内置 SDK 的公开 helper：
 
 ```sh
 cd plugins/session-title-agents
@@ -113,7 +131,7 @@ npm test
 npm run check
 ```
 
-测试全部使用临时目录，包括两个进程并发写入、失败落盘后重试、只读回填预检和卸载取消。`scripts/verify-runtime.mjs <runtime-root>` 可进一步接入已安装的真实 DSH 服务；ASAR 安装需通过 Electron 的 Node carrier 执行。这个契约测试的 LLM 适配器是替身，不等同于外部模型可用性测试。
+测试全部使用临时目录，包括 AGENTS 发现、片段提取与字节限制、配置校验、命名协调、两个进程并发写入、失败落盘后重试、只读回填预检和卸载取消。`scripts/verify-runtime.mjs <runtime-root>` 可进一步接入已安装的真实 DSH 服务；ASAR 安装需通过 Electron 的 Node carrier 执行。这个契约测试的 LLM 适配器是替身，不等同于外部模型可用性测试。
 
 [验证范围与行为边界](docs/VALIDATION.md)说明已核对的契约及使用限制。
 

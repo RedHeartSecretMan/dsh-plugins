@@ -8,10 +8,10 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3` services; declared compatibility is `>=0.2.1-rc.3 <0.3.0`.
 
-The package is `@redheartsecretman/session-title-agents`, version `0.1.0`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.1.0/session-title-agents-0.1.0.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-title-agents`, version `0.2.0`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.0/session-title-agents-0.2.0.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.1.0/session-title-agents-0.1.0.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.0/session-title-agents-0.2.0.tgz
 ```
 
 To install from a checkout instead:
@@ -45,6 +45,8 @@ Override `id: session-title-agents` in your profile's user patch. The whole `con
 | `maxOutputTokens` | `64` | Output cap; uses the model's lowest supported reasoning effort |
 | `timeoutMs` | `60000` | Deadline for one candidate-route attempt |
 | `maxProvisionalRefinements` | `4` | Legacy semantics: refine within the first N eligible human messages, **not a rewrite counter** |
+| `agentsInstructions.enabled` | `true` | Read applicable AGENTS naming excerpts and add main-agent naming coordination; `false` disables both |
+| `agentsInstructions.maxBytes` | `4096` | Final supplemental guidance UTF-8 byte limit; integer from `256` to `65536` |
 | `backfill.enabled` | `false` | Run one historical maintenance pass after startup |
 | `backfill.fallbackRoute` | unset | `{ provider, model }`; also the backup for ordinary title requests |
 | `backfill.retitle` | `[]` | Targets `[{ id, hint }]`, executed only while backfill is enabled |
@@ -66,6 +68,22 @@ Legacy aliases remain supported: `maxExploreRefinements` and top-level `retitle`
 ```
 
 The default Chinese vocabulary is 功能, 设计, 修复, 优化, 发布, 运维, 探索, 文档, 研究. `探索` is provisional. A canonical concrete title with the correct creation date is retained; provisional titles refine within the message-count limit. Model output is leniently normalized, but stored titles require canonical syntax and the correct date, so malformed legacy dates are not frozen as settled.
+
+## AGENTS naming guidance
+
+The plugin remains the automatic naming owner. When a title needs generation or provisional refinement, it reads naming excerpts from applicable `AGENTS.md` and `AGENTS.local.md` files. It lazily loads the public discovery helper from the in-box `@deepseek-ai/dsh-agent-instructions` SDK, using a profile fallback when needed; no installed runtime dependency is added. The helper discovers global `AGENTS.md` files under `DSH_HOME`, then `DSH_AGENTS_HOME`, followed by project files in its default `.git` root-to-current-working-directory scope. Other instruction filenames are not read. Discovery uses host-visible paths and the SDK's default baseline chain; it does not mirror a remote filesystem provider or additional deeper scopes discovered by the main agent's file operations.
+
+A heading matches when it combines 会话 or 对话 with 命名 or 标题, or session or conversation with naming or title. Matching is case-insensitive for English, and headings inside fenced code blocks are ignored. For an explicit excerpt, put the intended naming guidance between these markers:
+
+```markdown
+<!-- session-title-agents:start -->
+Prefer a concise topic describing the user's current task.
+<!-- session-title-agents:end -->
+```
+
+Only matching naming excerpts enter the supplemental prompt; unrelated engineering instructions are left out. `agentsInstructions.maxBytes` bounds the final supplemental UTF-8 text, with more-specific excerpts retained preferentially. Source reads are bounded and discovery has a soft timeout. Missing rules, SDK/read failures or the timeout preserve existing naming behavior. Files are reread when generation needs them, with no filesystem cache or continuous watcher. Changing a file alone does not regenerate an existing canonical settled provider title.
+
+AGENTS guidance may influence topic wording and provisional refinement. The configured template, creation date, type vocabulary, topic length limits and user-title pin remain authoritative. A `systemPrompt` coordination section asks the main agent to leave automatic naming to the plugin when only standing AGENTS rules request a rename; an explicit user rename remains allowed. This section is guidance, not a rename API restriction, and deployments that replace the complete system prompt may omit it. Set `agentsInstructions.enabled: false` to disable both the supplemental excerpts and coordination. The plugin never edits AGENTS files.
 
 ## Model errors and ownership
 
@@ -92,7 +110,7 @@ Exclusive locks, atomic replacement and recoverable queues protect bookkeeping a
 
 ## Development
 
-No dependencies or build step:
+No dependencies to install or build step. The optional AGENTS feature uses the public SDK helper shipped with Harness:
 
 ```sh
 cd plugins/session-title-agents
@@ -100,7 +118,7 @@ npm test
 npm run check
 ```
 
-Tests use isolated temporary directories, including multi-process state updates, flush failure, read-only backfill preflight and unload cancellation. `scripts/verify-runtime.mjs <runtime-root>` additionally checks the installed SessionStore, projections, title service and Cordis lifecycle; ASAR installs require Electron's Node carrier. Its LLM adapter is stubbed, so this is a runtime-contract check rather than a provider availability test.
+Tests use isolated temporary directories, including AGENTS discovery/extraction and byte limits, config validation, naming coordination, multi-process state updates, flush failure, read-only backfill preflight and unload cancellation. `scripts/verify-runtime.mjs <runtime-root>` additionally checks the installed SessionStore, projections, title service and Cordis lifecycle; ASAR installs require Electron's Node carrier. Its LLM adapter is stubbed, so this is a runtime-contract check rather than a provider availability test.
 
 See [validation and behavior boundaries](docs/VALIDATION.md) for checked contracts and limits.
 

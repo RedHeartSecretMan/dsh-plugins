@@ -4,11 +4,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const scratch = await mkdtemp(join(tmpdir(), 'session-title-agents-regression-'));
-const prior = process.env.DSH_PROFILE_DIR;
+const previous = Object.fromEntries(['DSH_PROFILE_DIR', 'DSH_HOME', 'DSH_AGENTS_HOME'].map(key => [key, process.env[key]]));
 process.env.DSH_PROFILE_DIR = scratch;
+process.env.DSH_HOME = join(scratch, 'harness');
+process.env.DSH_AGENTS_HOME = join(scratch, 'shared');
 after(async () => {
-  if (prior === undefined) delete process.env.DSH_PROFILE_DIR;
-  else process.env.DSH_PROFILE_DIR = prior;
+  for (const [key, value] of Object.entries(previous)) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
   await rm(scratch, { recursive: true, force: true });
 });
 const { apply } = await import('../index.js');
@@ -19,6 +22,7 @@ function fixture({ snapshot, replies = [[{ type: 'text-delta', index: 0, text: t
   const calls = [], effects = [];
   const ctx = {
     effect(setup) { const cleanup = setup(); if (typeof cleanup === 'function') effects.push(cleanup); return cleanup; },
+    inject(services, callback) { if (services.every(service => ctx[service])) callback(ctx); },
     logger: { info() {}, warn() {}, debug() {} }, get() {},
     sessionTitle: { register(value) { provider = value; }, get() { return snapshot; } },
     sessions: { get() {} }, sessionProjections: { stateOf() {} },
@@ -37,6 +41,33 @@ function fixture({ snapshot, replies = [[{ type: 'text-delta', index: 0, text: t
   const request = { session, messages: [{ seq: 1, text: '修复登录超时' }], signal: new AbortController().signal, ...(snapshot ? { currentTitle: snapshot } : {}) };
   return { ctx, calls, request, generate(config = {}) { apply(ctx, config); return provider.generate(request); }, dispose: async () => { for (const fn of effects.reverse()) await fn(); } };
 }
+test('coordination delegates automatic naming while preserving explicit user rename', async () => {
+  const f = fixture(); const sections = [];
+  f.ctx.systemPrompt = {
+    getSectionOrder: () => 2300,
+    section(value) { sections.push(value); f.ctx.effect(() => () => sections.splice(sections.indexOf(value), 1)); },
+  };
+  try {
+    await f.generate();
+    assert.equal(sections.length, 1);
+    assert.equal(sections[0].name, 'session-title-agents:coordination');
+    assert.match(sections[0].text, /Do not call a session rename tool/);
+    assert.match(sections[0].text, /user explicitly asks to rename/);
+  } finally { await f.dispose(); }
+  assert.equal(sections.length, 0);
+});
+test('disabling AGENTS support skips coordination and working-directory lookup', async () => {
+  const f = fixture();
+  f.ctx.inject = () => { throw new Error('coordination should be disabled'); };
+  f.ctx.get = key => { if (key === 'workingDirectory') throw new Error('lookup should be disabled'); };
+  try { assert.equal((await f.generate({ agentsInstructions: { enabled: false } })).title, title); }
+  finally { await f.dispose(); }
+});
+test('unavailable instruction discovery still allows ordinary title generation', async () => {
+  const f = fixture(); f.request.session.header.cwd = scratch;
+  try { assert.equal((await f.generate()).title, title); assert.equal(f.calls.length, 1); }
+  finally { await f.dispose(); }
+});
 test('terminal error uses the configured fallback route', async () => {
   const f = fixture({ replies: [[finish('error')], [{ type: 'text-delta', index: 0, text: title }, finish()]] });
   try {
