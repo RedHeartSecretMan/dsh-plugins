@@ -12,6 +12,24 @@ const empty = { text: "", sources: [] };
 const unavailable = { ...empty, unavailable: true };
 const label = source => `Instructions from: ${source}\n\n`;
 
+it('diagnostics expose only failure categories, never exception contents', async t => {
+  const f = await fixture(t); const reasons = [];
+  const read = createInstructionReader({ discover: async () => { throw new Error('SECRET_MARKER'); }, onDiagnostic: reason => reasons.push(reason) });
+  assert.deepEqual(await read({ cwd: f.cwd }), unavailable);
+  assert.deepEqual(reasons, ['discovery-failed']);
+});
+it('diagnostic callback failures cannot break graceful fallback', async t => {
+  const f = await fixture(t);
+  const read = createInstructionReader({ discover: async () => { throw new Error('bad'); }, onDiagnostic: () => { throw new Error('logger failure'); } });
+  assert.deepEqual(await read({ cwd: f.cwd }), unavailable);
+});
+it('invalid records and unreadable files receive distinct diagnostic categories', async t => {
+  const f = await fixture(t); const reasons = [];
+  const read = createInstructionReader({ discover: async () => [{ path: 'wrong-field' }, { absolutePath: join(f.cwd, 'missing'), displayPath: 'missing' }], onDiagnostic: reason => reasons.push(reason) });
+  assert.deepEqual(await read({ cwd: f.cwd }), unavailable);
+  assert.deepEqual(reasons, ['invalid-discovery-record', 'read-failed']);
+});
+
 async function fixture(t) {
   const cwd = await mkdtemp(join(tmpdir(), "session-title-instructions-"));
   assert.ok(isAbsolute(cwd));

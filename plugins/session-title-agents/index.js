@@ -1,4 +1,5 @@
-/** Structured titles for the DeepSeek Harness 0.2.1 provider contract. */
+/** Structured titles and current-session metadata tools for DeepSeek Harness. */
+import { registerRenameTool } from './lib/rename.js';
 import { randomUUID } from 'node:crypto';
 import { resolveConfig } from './lib/config.js';
 import { createStateStore, stateDirectory } from './lib/state.js';
@@ -77,14 +78,26 @@ export function apply(ctx, rawConfig) {
   const state = createStateStore({ directory: stateDirectory({ ...process.env, ...(profileDirectory ? { DSH_PROFILE_DIR: profileDirectory } : {}) }) });
   const pattern = compileTitlePattern(config.template, config.types.map(type => type.key));
   const activeRetitles = new Map();
-  const readInstructions = config.agentsInstructions.enabled ? createInstructionReader() : undefined;
+  const readInstructions = config.agentsInstructions.enabled
+    ? createInstructionReader({ onDiagnostic: reason => state.note(`agents-instructions-${reason}`) }) : undefined;
+  const forcedRefreshes = new Set();
+  ctx.inject?.(['tools'], async (toolCtx) => {
+    const { defineTool } = await import('@deepseek-ai/dsh-tools');
+    if (lifetime.signal.aborted) return;
+    registerRenameTool(toolCtx, defineTool, async (session, signal) => {
+      const id = String(session.id);
+      forcedRefreshes.add(id);
+      try { return await ctx.sessionTitle.refresh(session, signal); }
+      finally { forcedRefreshes.delete(id); }
+    });
+  });
   if (config.agentsInstructions.enabled) {
     ctx.inject?.(['systemPrompt'], (promptCtx) => {
       promptCtx.systemPrompt.section({
         name: `${name}:coordination`,
         order: promptCtx.systemPrompt.getSectionOrder('TOOL_SESSION_QUERY') + 1,
         interpolate: false,
-        text: 'Automatic session naming is managed by session-title-agents. Do not call a session rename tool merely to satisfy standing session-naming rules in AGENTS.md; the title provider reads applicable naming excerpts itself. When the user explicitly asks to rename the session, use the supported rename interface. Continue to follow all other applicable workspace instructions.',
+        text: 'Automatic session naming is managed by session-title-agents. Do not call a session rename tool merely to satisfy standing session-naming rules in AGENTS.md; the title provider reads applicable naming excerpts itself. When the user explicitly asks to rename the session, call rename_current_session with the complete title and report the accepted result; do not ask the user to edit the GUI when this tool is available. Continue to follow all other applicable workspace instructions.',
       });
     });
   }
@@ -103,25 +116,40 @@ export function apply(ctx, rawConfig) {
       const date = formatDate(request.session.header?.createdAt, config.timezone, config.dateFormat);
       const options = titleOptions(date);
       const current = request.currentTitle ?? ctx.sessionTitle.get(request.session);
-      const hint = activeRetitles.get(String(request.session.id));
-      const forced = activeRetitles.has(String(request.session.id));
-      if (!forced && current?.source.kind === 'provider' &&
-          (isSettledTitle(current.title, options) || (isFormattedTitle(current.title, options) && messages.length > config.maxProvisionalRefinements))) {
-        // The host has no custom "skip" error protocol. Return an unchanged valid
-        // result like the shipped provider, avoiding warnings on normal stability.
+      // Native provider requests do not carry a refresh/automatic discriminator.
+      // Our explicit refresh tool and targeted backfill supply an unambiguous intent.
+      const explicitRefresh = forcedRefreshes.has(String(request.session.id));
+      const targeted = activeRetitles.has(String(request.session.id));
+      const forced = targeted || explicitRefresh;
+      const hint = activeRetitles.get(String(request.session.id))
+        ?? (explicitRefresh ? 'Explicit refresh: reconsider the session topic; do not keep a poor title merely because its format is valid.' : undefined);
+      const fallback = buildFallbackTitle({ date, template: config.template, fallbackType: config.fallbackType, sourceText: messages[0].text, cjkSpacing: config.cjkSpacing, topicMaxChars: config.topicMaxChars });
+      // A deterministic first-message truncation has never demonstrated a useful
+      // summary. Recognize legacy provider-labelled fallbacks as well, even when
+      // old versions attached model metadata to them.
+      const needsRecovery = current?.title === fallback
+        || (current?.source.kind === 'provider' && !current.source.model
+          && isFormattedTitle(current.title, options) && fallback.startsWith(current.title));
+      const keepCurrent = () => {
         const available = new Set(messages.map(message => message.seq));
         const cited = (current.messageSeqs ?? []).filter(seq => available.has(seq));
-        return { title: current.title, messageSeqs: cited.length ? cited : [messages[0].seq] };
+        const model = current.source.kind === 'provider' ? current.source.model : undefined;
+        return { title: current.title, messageSeqs: cited.length ? cited : [messages[0].seq], ...(model ? { model } : {}) };
+      };
+      if (!forced && !needsRecovery && current?.source.kind === 'provider' &&
+          (isSettledTitle(current.title, options) || (isFormattedTitle(current.title, options) && messages.length > config.maxProvisionalRefinements))) {
+        return keepCurrent();
       }
       const selected = selectContextMessages(messages, config.maxInputBytes);
       if (!selected.length) throw new Error('session-title-agents: no input fits the configured byte budget');
       const messageSeqs = selected.map(message => message.seq);
       let route = resolveRoute(config, request, ctx);
       const fallbackRoute = config.backfill.fallbackRoute;
-      if (forced && fallbackRoute) route = fallbackRoute;
+      if (targeted && fallbackRoute) route = fallbackRoute;
       if (!route) {
-        if (current && isFormattedTitle(current.title, options)) return { title: current.title, messageSeqs };
-        return { title: buildFallbackTitle({ date, template: config.template, fallbackType: config.fallbackType, sourceText: messages[0].text, cjkSpacing: config.cjkSpacing, topicMaxChars: config.topicMaxChars }), messageSeqs };
+        if (explicitRefresh) throw new Error('Cannot regenerate the title: no model route is available');
+        if (current && isFormattedTitle(current.title, options)) return keepCurrent();
+        return { title: fallback, messageSeqs };
       }
       const cwd = readInstructions ? (ctx.get?.('workingDirectory')?.get?.(request.session) ?? request.session.header?.cwd) : undefined;
       const namingGuidance = readInstructions ? await readInstructions({ cwd, signal, maxBytes: config.agentsInstructions.maxBytes }) : undefined;

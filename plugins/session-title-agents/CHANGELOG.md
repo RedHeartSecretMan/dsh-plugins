@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 — 2026-10-26
+
+- Recover deterministic first-message fallback titles after the provisional message window, including legacy provider-labelled and Host-truncated fallbacks; preserve model provenance on no-op results.
+- Add `rename_current_session` and `refresh_current_session_title`: caller-owned live-session targets, official title APIs, cancellation/pinning, exclusive execution and flush/read-back before success.
+- Fix linked-plugin SDK discovery with optional Harness peer declarations and category-only import/discovery/read/timeout diagnostics.
+- Replace custom SDK test hooks with the real profile resolver; cover explicit tool refresh, in-flight cancellation, persisted read-back and tool unload. Native GUI refresh remains subject to SDK trigger ambiguity; use the dedicated refresh tool.
+- Raise the output-token ceiling to 4096 for models whose lowest effort still includes hidden reasoning; topic length remains bounded.
+- Correct the impossible DSH engine range to match the installed 0.2.1-rc.3 contract checks; no broader runtime compatibility is claimed.
+
 ## 0.2.0 — 2026-10-25
 
 - Supplement automatic naming with bounded naming excerpts from applicable `AGENTS.md` and `AGENTS.local.md`, discovered lazily through the in-box public SDK helper without an installed runtime dependency.

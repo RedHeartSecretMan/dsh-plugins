@@ -20,7 +20,7 @@
         topicMinChars: 8
         topicMaxChars: 18
         fallbackType: 探索
-        maxOutputTokens: 64
+        maxOutputTokens: 4096
         timeoutMs: 60000
         maxProvisionalRefinements: 4
         # Read only matching AGENTS naming excerpts as supplemental guidance.

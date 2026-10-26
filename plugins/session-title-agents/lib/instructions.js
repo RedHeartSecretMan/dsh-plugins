@@ -82,7 +82,11 @@ export function extractNamingSections(text) {
 }
 
 async function defaultDiscover(options) {
-  const { discoverBaselineInstructionFiles } = await import("@deepseek-ai/dsh-agent-instructions");
+  let discoverBaselineInstructionFiles;
+  try { ({ discoverBaselineInstructionFiles } = await import('@deepseek-ai/dsh-agent-instructions')); }
+  catch (cause) {
+    throw Object.assign(new Error('Harness instruction SDK could not be imported', { cause }), { code: 'SDK_IMPORT_FAILED' });
+  }
   options.signal.throwIfAborted();
   return discoverBaselineInstructionFiles(options);
 }
@@ -143,7 +147,8 @@ function render(entries, maxBytes) {
 }
 
 /** Create a fresh, bounded reader; only the SDK owns instruction-file discovery. */
-export function createInstructionReader({ discover = defaultDiscover, timeoutMs = 2000, maxSourceBytes = 1048576 } = {}) {
+export function createInstructionReader({ discover = defaultDiscover, timeoutMs = 2000, maxSourceBytes = 1048576, onDiagnostic = () => {} } = {}) {
+  const note = reason => { try { onDiagnostic(reason); } catch { /* Diagnostics cannot break naming. */ } };
   timeoutMs = limit(timeoutMs, 2000);
   maxSourceBytes = limit(maxSourceBytes, 1048576);
 
@@ -188,6 +193,7 @@ export function createInstructionReader({ discover = defaultDiscover, timeoutMs 
         if (typeof file?.absolutePath !== "string" || !isAbsolute(file.absolutePath)
           || typeof file.displayPath !== "string" || !file.displayPath.trim()) {
           unavailable = true;
+          note('invalid-discovery-record');
           continue;
         }
         const path = resolve(file.absolutePath);
@@ -201,6 +207,7 @@ export function createInstructionReader({ discover = defaultDiscover, timeoutMs 
           if (excerpts.length) entries.push({ source: file.displayPath, excerpts });
         } catch {
           controller.signal.throwIfAborted();
+          note('read-failed');
           unavailable = true;
         }
       }
@@ -222,8 +229,9 @@ export function createInstructionReader({ discover = defaultDiscover, timeoutMs 
 
     try {
       return await Promise.race([load(), cancellation]);
-    } catch {
+    } catch (error) {
       signal?.throwIfAborted();
+      note(controller.signal.aborted ? 'timeout' : error?.code === 'SDK_IMPORT_FAILED' ? 'sdk-import-failed' : 'discovery-failed');
       return { ...empty(), unavailable: true };
     } finally {
       clearTimeout(timer);

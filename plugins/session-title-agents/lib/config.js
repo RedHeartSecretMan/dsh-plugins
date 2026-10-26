@@ -30,7 +30,7 @@ export const DEFAULTS = {
   provider: undefined,
   model: undefined,
   maxInputBytes: 4096,
-  maxOutputTokens: 64,
+  maxOutputTokens: 4096,
   timeoutMs: 60000,
   maxProvisionalRefinements: 4,
   agentsInstructions: { enabled: true, maxBytes: 4096 },
