@@ -14,10 +14,10 @@
 
 需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
-包名为 `@redheartsecretman/session-title-agents`，当前版本为 `0.2.1`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.1/session-title-agents-0.2.1.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-title-agents`，当前版本为 `0.2.2`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.2/session-title-agents-0.2.2.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.1/session-title-agents-0.2.1.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.2/session-title-agents-0.2.2.tgz
 ```
 
 也可以从仓库目录安装：

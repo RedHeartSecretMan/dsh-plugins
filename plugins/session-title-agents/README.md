@@ -8,10 +8,10 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-title-agents`, version `0.2.1`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.1/session-title-agents-0.2.1.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-title-agents`, version `0.2.2`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.2/session-title-agents-0.2.2.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.1/session-title-agents-0.2.1.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.2/session-title-agents-0.2.2.tgz
 ```
 
 To install from a checkout instead:

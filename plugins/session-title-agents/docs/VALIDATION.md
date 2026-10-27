@@ -1,6 +1,6 @@
 # session-title-agents 验证范围与行为边界
 
-当前发布：`0.2.1`。验证环境包括已安装的 DSH `0.2.1-rc.3` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-agents 0.2.1](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.1/session-title-agents-0.2.1.tgz)。
+当前发布：`0.2.2`。验证环境包括已安装的 DSH `0.2.1-rc.3` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-agents 0.2.2](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-agents-v0.2.2/session-title-agents-0.2.2.tgz)。
 
 ## 已验证的契约
 

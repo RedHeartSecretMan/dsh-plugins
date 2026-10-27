@@ -4,6 +4,7 @@
 
 - Record auxiliary `session/title-llm-request` messages with the canonical `dsh-session-title-llm` source kind instead of the plugin name. The session-format v4 restore validator (`titleSources`) requires that exact kind and otherwise rejects the whole stored Session on the next cold load with `session/title-llm-request messages do not represent messageSeqs`.
 - Add a regression test for the recorded message source so the format contract cannot silently regress.
+- Correct the install instructions and validation metadata to name version 0.2.2 and its release archive.
 - The plugin does not migrate already-recorded events; historical logs that already contain the wrong kind need a separate repair.
 
 ## 0.2.1 — 2026-10-26
