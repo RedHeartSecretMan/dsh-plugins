@@ -48,3 +48,10 @@
 - 改名工具仅接收 title，刷新工具不接收参数；拒绝跨会话参数、无 agent、失效会话与取消调用。
 - 改名固定标题、取消在飞生成；两个工具均确认 flush 与读回，不通过直接文件改写修改生产会话。
 - SDK peers 由正式 linked-profile resolver 解析，诊断只包含故障类别；普通 Node 单测无需安装整套 Harness。
+
+## 0.2.2 新增验收
+
+- `session/title-llm-request` 记录的消息来源固定为 `dsh-session-title-llm`，与会话格式 v4 还原校验的 `titleSources` 契约一致；不再写入插件自身名称。
+- 回归测试断言追加事件的 `data.messages[0].source.kind`；该字段回退会使历史会话在下一次冷加载时被判定为日志损坏。
+- 插件不迁移历史事件：已经写入错误来源的会话日志需要单独修复后才能重新打开，本插件不提供自动迁移。
+

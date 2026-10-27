@@ -37,7 +37,9 @@ async function titleCall(ctx, config, request, route, system, input, messageSeqs
       const effort = model.reasoning?.efforts?.[0]?.id;
       return { ...controls, ...(effort === undefined ? {} : { reasoningEffort: effort }) };
     });
-    const messages = [{ id: randomUUID(), role: 'user', content: [{ type: 'text', text: input }], source: { kind: name } }];
+    // The session-format v4 restore validator requires this exact source kind on the
+    // recorded request message; a provider-named kind makes the stored log unreadable.
+    const messages = [{ id: randomUUID(), role: 'user', content: [{ type: 'text', text: input }], source: { kind: 'dsh-session-title-llm' } }];
     const options = { ...call.config, messages, system, sessionId: request.session.id, purpose: 'session-title', signal: combined };
     combined.throwIfAborted();
     // Use the built-in event type and payload, so auxiliary requests remain replayable.

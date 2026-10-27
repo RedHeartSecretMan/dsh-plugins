@@ -68,7 +68,7 @@ test('discussion of rename does not itself force an automatic rename', async () 
 const finish = (kind = 'stop') => ({ type: 'finish', reason: { kind, failure: { code: 'MODEL_FAILED', message: 'model failed' } } });
 function fixture({ snapshot, replies = [[{ type: 'text-delta', index: 0, text: title }, finish()]] } = {}) {
   let provider;
-  const calls = [], effects = [];
+  const calls = [], effects = [], appends = [];
   const ctx = {
     effect(setup) { const cleanup = setup(); if (typeof cleanup === 'function') effects.push(cleanup); return cleanup; },
     inject(services, callback) { if (services.every(service => ctx[service])) callback(ctx); },
@@ -86,9 +86,9 @@ function fixture({ snapshot, replies = [[{ type: 'text-delta', index: 0, text: t
       },
     },
   };
-  const session = { id: 'fixture', append() {}, header: { createdAt: Date.UTC(2026, 9, 24, 17, 30) }, requestHeader: () => ({ config: { provider: 'primary', model: 'old-model' } }) };
+  const session = { id: 'fixture', append(type, data) { appends.push({ type, data }); }, header: { createdAt: Date.UTC(2026, 9, 24, 17, 30) }, requestHeader: () => ({ config: { provider: 'primary', model: 'old-model' } }) };
   const request = { session, messages: [{ seq: 1, text: '修复登录超时' }], signal: new AbortController().signal, ...(snapshot ? { currentTitle: snapshot } : {}) };
-  return { ctx, calls, request, generate(config = {}) { apply(ctx, config); return provider.generate(request); }, dispose: async () => { for (const fn of effects.reverse()) await fn(); } };
+  return { ctx, calls, appends, request, generate(config = {}) { apply(ctx, config); return provider.generate(request); }, dispose: async () => { for (const fn of effects.reverse()) await fn(); } };
 }
 test('first automatic fallback is not an explicit refresh and keeps the primary route', async () => {
   const f = fixture({ snapshot: { title: '修复登录超时', source: { kind: 'fallback' }, messageSeqs: [1], eventSeq: 2 } });
@@ -190,4 +190,16 @@ test('cancellation during a stream does not start a fallback request', async () 
   const f = fixture(); const abort = new AbortController(); f.request.signal = abort.signal;
   f.ctx.llm.stream = async function* () { abort.abort(); yield finish('aborted'); };
   try { await assert.rejects(f.generate({ backfill: { fallbackRoute: { provider: 'b', model: 'm' } } }), e => e.name === 'AbortError'); } finally { await f.dispose(); }
+});
+test('auxiliary title request records the canonical message source kind', async () => {
+  const f = fixture();
+  try {
+    await f.generate();
+    const recorded = f.appends.filter(entry => entry.type === 'session/title-llm-request');
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].data.titleProvider, 'session-title-agents');
+    assert.equal(recorded[0].data.messages.length, 1);
+    assert.equal(recorded[0].data.messages[0].role, 'user');
+    assert.deepEqual(recorded[0].data.messages[0].source, { kind: 'dsh-session-title-llm' });
+  } finally { await f.dispose(); }
 });
