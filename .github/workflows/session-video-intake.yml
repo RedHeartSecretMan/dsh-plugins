@@ -1,0 +1,19 @@
+name: session-video-intake checks
+on:
+  push:
+    paths:
+      - 'plugins/session-video-intake/**'
+      - '.github/workflows/session-video-intake.yml'
+      - '.github/workflows/plugin-checks.yml'
+  pull_request:
+    paths:
+      - 'plugins/session-video-intake/**'
+      - '.github/workflows/session-video-intake.yml'
+      - '.github/workflows/plugin-checks.yml'
+permissions:
+  contents: read
+jobs:
+  checks:
+    uses: ./.github/workflows/plugin-checks.yml
+    with:
+      plugin: session-video-intake

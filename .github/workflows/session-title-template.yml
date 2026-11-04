@@ -1,0 +1,19 @@
+name: session-title-template checks
+on:
+  push:
+    paths:
+      - 'plugins/session-title-template/**'
+      - '.github/workflows/session-title-template.yml'
+      - '.github/workflows/plugin-checks.yml'
+  pull_request:
+    paths:
+      - 'plugins/session-title-template/**'
+      - '.github/workflows/session-title-template.yml'
+      - '.github/workflows/plugin-checks.yml'
+permissions:
+  contents: read
+jobs:
+  checks:
+    uses: ./.github/workflows/plugin-checks.yml
+    with:
+      plugin: session-title-template

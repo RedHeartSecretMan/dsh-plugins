@@ -1,0 +1,55 @@
+name: release plugin
+on:
+  push:
+    tags:
+      - '*-v*'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Resolve plugin and version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PLUGIN="${TAG%-v*}"
+          VERSION="${TAG##*-v}"
+          test -f "plugins/${PLUGIN}/package.json"
+          PLUGIN="$PLUGIN" VERSION="$VERSION" node -e '
+            const p = require(`./plugins/${process.env.PLUGIN}/package.json`);
+            if (p.version !== process.env.VERSION) {
+              console.error(`tag version ${process.env.VERSION} != package.json ${p.version}`);
+              process.exit(1);
+            }
+          '
+          echo "PLUGIN=$PLUGIN" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Check and test
+        working-directory: plugins/${{ env.PLUGIN }}
+        run: |
+          npm run check
+          npm test
+      - name: Pack
+        working-directory: plugins/${{ env.PLUGIN }}
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mv "$RUNNER_TEMP/redheartsecretman-${PLUGIN}-${VERSION}.tgz" \
+             "$RUNNER_TEMP/${PLUGIN}-${VERSION}.tgz"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET="$RUNNER_TEMP/${PLUGIN}-${VERSION}.tgz"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$ASSET" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "${PLUGIN} ${VERSION}" \
+              --generate-notes \
+              --verify-tag
+          fi

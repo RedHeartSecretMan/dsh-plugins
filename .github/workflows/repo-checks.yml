@@ -1,0 +1,19 @@
+name: repository checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --check tools/status.mjs
+      - run: node --check tools/check-links.mjs
+      - run: node --check tools/check-versions.mjs
+      - run: node tools/check-links.mjs
+      - run: node tools/check-versions.mjs
