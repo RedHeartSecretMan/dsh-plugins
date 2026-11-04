@@ -1,0 +1,26 @@
+# NOTICE
+
+session-video-intake includes an independent implementation of a storyboard
+fallback for image-only model routes.
+
+## Design inspiration
+
+The storyboard approach — downscaled HSV scene scanning, a rate-based cut
+threshold, segment-aware cell placement, and the idea of a single addressable
+contact sheet — is inspired by:
+
+- dsh-video-storyboard
+  https://github.com/SAOS-3624/dsh-video-storyboard
+
+This plugin does **not** copy, modify, or redistribute that project's source
+code. The implementation in `lib/scenes.js` and `lib/storyboard.js` was written
+independently for this plugin's much narrower scope: one contact sheet per
+request, no transcription, no zoom tooling, no multi-image tiers.
+
+## Features not adopted here
+
+- Laplacian-variance sharpest-frame selection (this plugin samples the centre of
+  each segment).
+- Aligned audio-envelope strips and sub-clip token budgets.
+- ASR, subtitle extraction and transcript files.
+- `cellId` zoom addressing, multi-window sheets and cross-request scan caches.

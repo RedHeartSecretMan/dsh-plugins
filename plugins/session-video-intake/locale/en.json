@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session Video Intake",
+    "description": "Handles input video automatically according to the current model's capability."
+  }
+}

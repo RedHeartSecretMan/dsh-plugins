@@ -1,0 +1,72 @@
+{
+  "name": "@redheartsecretman/session-video-intake",
+  "version": "0.1.0",
+  "description": "Video input for DeepSeek Harness: native video_url when the selected route supports video (explicit whitelist or provider catalog discovery), a scene-aware storyboard fallback when it only supports images, and an explicit failure otherwise. No provider is registered.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "video",
+    "video-url",
+    "storyboard",
+    "cordis"
+  ],
+  "license": "MIT",
+  "author": "RedHeartSecretMan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RedHeartSecretMan/dsh-plugins.git",
+    "directory": "plugins/session-video-intake"
+  },
+  "homepage": "https://github.com/RedHeartSecretMan/dsh-plugins/tree/main/plugins/session-video-intake#readme",
+  "bugs": {
+    "url": "https://github.com/RedHeartSecretMan/dsh-plugins/issues"
+  },
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./lib/*": "./lib/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "docs/*.md",
+    "scripts/*.mjs",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "icon": "./icon.svg",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "check": "node --check index.js && node --check client.js && node --check lib/catalog.js && node --check lib/config.js && node --check lib/capability.js && node --check lib/payload.js && node --check lib/provider.js && node --check lib/router.js && node --check lib/scenes.js && node --check lib/storyboard.js && node --check scripts/verify-runtime.mjs && node --check scripts/verify-gateway.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.1-rc.3 <0.6.0"
+  }
+}

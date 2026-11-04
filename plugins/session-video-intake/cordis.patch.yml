@@ -1,0 +1,28 @@
+# Video handling is decided per route: the plugin never registers a provider and
+# never changes the route the user selected.
+#
+#   videoRoutes  → explicit whitelist of provider/model pairs that accept native
+#                  `video_url`. Leave it unset to discover video support from the
+#                  provider's model listing; set [] to disable native video.
+#   catalogProbe → discovery settings used only while videoRoutes is unset.
+#   everything else that accepts images gets a storyboard fallback.
+#   routes with neither capability fail with VIDEO_UNSUPPORTED.
+- insert:
+    - id: session-video-intake
+      name: '@redheartsecretman/session-video-intake'
+      config:
+        enabled: true
+        catalogProbe:
+          enabled: true
+          timeoutMs: 2500
+          ttlMs: 300000
+        maxOutputTokens: 32768
+        maxVideoBytes: 67108864
+        maxTotalVideoBytes: 67108864
+        maxVideos: 8
+        storyboard:
+          enabled: true
+          sceneAware: true
+          cells: 9
+          cellEdge: 256
+          timeoutMs: 120000
