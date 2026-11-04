@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="session-title-template">
+  <title>session-title-template</title>
+  <defs>
+    <linearGradient id="title08-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2b3350"/><stop offset=".55" stop-color="#1d2438"/><stop offset="1" stop-color="#12161f"/>
+    </linearGradient>
+    <linearGradient id="title08-hi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".16"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="title08-sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1.7" stdDeviation="1.2" flood-color="#000" flood-opacity=".38"/>
+    </filter>
+    <filter id="title08-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.4"/>
+    </filter>
+    <filter id="title08-star" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="1.2" stdDeviation="1" flood-color="#0b0d12" flood-opacity=".45"/>
+    </filter>
+    <clipPath id="title08-clip"><rect x="2" y="2" width="60" height="60" rx="15"/></clipPath>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#title08-bg)"/>
+  <g clip-path="url(#title08-clip)">
+    <path d="M2 26C8 10 22 2 36 2h26v14C48 12 22 14 2 32z" fill="url(#title08-hi)"/>
+    <circle cx="50" cy="12" r="10" fill="#fff" opacity=".05"/>
+  </g>
+  <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="14.25" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="1.5"/>
+  <g filter="url(#title08-sh)">
+    <!-- sheet + sparkle -->
+<rect x="15" y="14" width="34" height="36" rx="7" fill="#f7f9fc"/>
+<rect x="21" y="23" width="16" height="4" rx="2" fill="#2a3350"/>
+<rect x="21" y="31" width="16" height="4" rx="2" fill="#9aa6bd"/>
+<rect x="21" y="39" width="13" height="4" rx="2" fill="#5cc8ff"/>
+<g filter="url(#title08-star)">
+  <path d="M46 15.2C46.9 20.6 49.4 23.1 54.8 24 49.4 24.9 46.9 27.4 46 32.8 45.1 27.4 42.6 24.9 37.2 24 42.6 23.1 45.1 20.6 46 15.2Z" fill="#ffb454"/>
+  <path d="M46 15.2C46.9 20.6 49.4 23.1 54.8 24 49.4 24.9 46.9 27.4 46 32.8 45.1 27.4 42.6 24.9 37.2 24 42.6 23.1 45.1 20.6 46 15.2Z" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width=".8"/>
+</g>
+  </g>
+</svg>

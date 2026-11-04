@@ -1,0 +1,34 @@
+# Replace the shipped free-form title provider with the template-shaped one.
+#
+# `session-title-llm` is the default first-prompt provider. Leaving it enabled
+# would register a second provider, and the session-title service accepts only
+# one at a time. Disabling it here is what makes this bundle's provider the
+# active one; removing the bundle restores the default.
+- id: session-title-llm
+  disabled: true
+
+- insert:
+    - id: session-title-template
+      name: '@redheartsecretman/session-title-template'
+      config:
+        # Defaults reproduce the Chinese convention. Override any field here.
+        template: '[{date}][{type}] {topic}'
+        dateFormat: MMDD
+        timezone: Asia/Shanghai
+        language: zh
+        cjkSpacing: true
+        topicMinChars: 8
+        topicMaxChars: 18
+        fallbackType: 探索
+        maxOutputTokens: 4096
+        timeoutMs: 60000
+        maxProvisionalRefinements: 4
+        # Read only matching AGENTS naming excerpts as supplemental guidance.
+        # false disables both excerpts and main-agent naming coordination.
+        agentsInstructions:
+          enabled: true
+          maxBytes: 4096
+        # Backfill is opt-in. It reads eligibility before resuming closed idle
+        # root sessions, preserves pinned titles, and marks only durable writes.
+        backfill:
+          enabled: false
