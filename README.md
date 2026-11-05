@@ -44,7 +44,7 @@ dsh-plugins/
 │  │  ├─ test/                   node:test suites
 │  │  └─ README.md               behaviour, configuration, caveats
 │  └─ session-video-intake/       another self-contained bundle
-├─ .github/workflows/           plugin checks plus repository syntax/link checks
+├─ .github/workflows/           plugin checks, automated releases and repository checks
 ├─ tools/status.mjs             which plugin changed since its last release
 ├─ tools/check-links.mjs        relative Markdown link and anchor checker
 ├─ tools/check-versions.mjs     release URL / version consistency checker

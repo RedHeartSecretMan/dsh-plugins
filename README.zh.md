@@ -44,7 +44,7 @@ dsh-plugins/
 │  │  ├─ test/                   node:test 测试
 │  │  └─ README.md               行为、配置与注意事项
 │  └─ session-video-intake/       另一个自包含的 bundle
-├─ .github/workflows/           插件检查与仓库语法/链接检查
+├─ .github/workflows/           插件检查、自动发布与仓库检查
 ├─ tools/status.mjs             查看哪个插件自上次发布后有改动
 ├─ tools/check-links.mjs        相对 Markdown 链接与 anchor 检查
 ├─ tools/check-versions.mjs     发布 URL / 版本引用一致性检查
