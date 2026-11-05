@@ -6,12 +6,12 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 ## Install
 
-Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
+Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3` and `0.2.2-rc.1` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-title-template`, version `0.1.0`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.0/session-title-template-0.1.0.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-title-template`, version `0.1.1`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.0/session-title-template-0.1.0.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz
 ```
 
 To install from a checkout instead:
@@ -131,7 +131,12 @@ npm test
 npm run check
 ```
 
-Tests use isolated temporary directories, including AGENTS discovery/extraction and byte limits, config validation, naming coordination, multi-process state updates, flush failure, read-only backfill preflight and unload cancellation. `scripts/verify-runtime.mjs <runtime-root>` additionally checks the installed SessionStore, projections, title service and Cordis lifecycle; ASAR installs require Electron's Node carrier. It uses the real profile linked-peer resolver, tool registry and title service. The LLM and disk durability listener are fixtures: this does not test external model availability or production-writer restart recovery.
+Tests use isolated temporary directories, including AGENTS discovery/extraction and byte limits, config validation, naming coordination, multi-process state updates, flush failure, read-only backfill preflight and unload cancellation. `scripts/verify-runtime.mjs <runtime-root>` additionally checks the installed SessionStore, projections, title service and Cordis lifecycle; ASAR installs require Electron's Node carrier. It uses the real profile linked-peer resolver, tool registry and title service. The LLM and disk durability listener are fixtures: this does not test external model availability or production-writer restart recovery. For a real-model smoke test, `test/verify-gateway.mjs` is opt-in via `RUN_SESSION_TITLE_LIVE=1` and a gateway/model:
+
+```sh
+RUN_SESSION_TITLE_LIVE=1 SESSION_TITLE_GATEWAY=http://127.0.0.1:3425/v1 SESSION_TITLE_MODEL=auto/deepseek-flash MAGPIE_GATEWAY_KEY=... \
+ELECTRON_RUN_AS_NODE=1 '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness' test/verify-gateway.mjs
+```
 
 See [validation and behavior boundaries](docs/VALIDATION.md) for checked contracts and limits.
 

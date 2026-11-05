@@ -1,79 +1,16 @@
 /** Structured titles and current-session metadata tools for DeepSeek Harness. */
-import { registerRenameTool } from './lib/rename.js';
-import { randomUUID } from 'node:crypto';
 import { resolveConfig } from './lib/config.js';
 import { createStateStore, stateDirectory } from './lib/state.js';
 import { createInstructionReader } from './lib/instructions.js';
 import { backfillTitles } from './lib/backfill.js';
 import { buildFallbackTitle, buildSystemPrompt, compileTitlePattern, formatDate, frameMessages, isFormattedTitle, isSettledTitle, parseModelTitle, selectContextMessages } from './lib/title.js';
+import { resolveRoute, titleCall } from './lib/run.js';
+import { registerCoordination } from './lib/coordination.js';
 
 export const name = 'session-title-template';
 export const inject = ['sessionTitle', 'llm', 'sessions', 'sessionProjections'];
 
-function resolveRoute(config, request, ctx) {
-  if (config.provider !== undefined) return { provider: config.provider, model: config.model };
-  if (request.route?.provider && request.route.model) return request.route;
-  const header = request.session.requestHeader?.()?.config;
-  if (header?.provider && header.model) return { provider: header.provider, model: header.model };
-  try {
-    const selection = ctx.sessionProjections.stateOf(request.session, 'modelSelection')?.lastUsed;
-    if (selection?.provider && selection.model) return { provider: selection.provider, model: selection.model };
-  } catch {
-    // The optional modelSelection unit is not registered in every profile.
-  }
-  return config.backfill.fallbackRoute;
-}
-
-/** Read only text blocks, and require a successful terminal outcome. */
-async function titleCall(ctx, config, request, route, system, input, messageSeqs, signal) {
-  const timeout = new AbortController();
-  const timer = setTimeout(() => timeout.abort(new Error('session-title-template: title request timed out')), config.timeoutMs);
-  timer.unref?.();
-  const combined = AbortSignal.any([signal, timeout.signal]);
-  try {
-    combined.throwIfAborted();
-    if (Buffer.byteLength(input, 'utf8') > config.maxInputBytes) throw new Error('session-title-template: input byte budget exceeded');
-    const call = await ctx.llm.prepareCall({ ...route, maxTokens: config.maxOutputTokens }, combined, (controls, model) => {
-      const effort = model.reasoning?.efforts?.[0]?.id;
-      return { ...controls, ...(effort === undefined ? {} : { reasoningEffort: effort }) };
-    });
-    // The session-format v4 restore validator requires this exact source kind on the
-    // recorded request message; a provider-named kind makes the stored log unreadable.
-    const messages = [{ id: randomUUID(), role: 'user', content: [{ type: 'text', text: input }], source: { kind: 'dsh-session-title-llm' } }];
-    const options = { ...call.config, messages, system, sessionId: request.session.id, purpose: 'session-title', signal: combined };
-    combined.throwIfAborted();
-    // Use the built-in event type and payload, so auxiliary requests remain replayable.
-    request.session.append('session/title-llm-request', {
-      titleProvider: name, messageSeqs, route, system, messages, maxTokens: config.maxOutputTokens,
-      ...(call.config.reasoningEffort === undefined ? {} : { reasoningEffort: call.config.reasoningEffort }),
-    });
-    const blocks = new Map();
-    let finish;
-    for await (const chunk of call.stream(options)) {
-      combined.throwIfAborted();
-      const index = chunk.index ?? 0;
-      if (chunk.type === 'finish') { finish = chunk.reason; continue; }
-      if (chunk.type === 'tool-call-delta' || (chunk.type === 'block-start' && chunk.blockType === 'tool-call')) {
-        throw new Error('session-title-template: title response must not contain tool calls');
-      }
-      if (chunk.type === 'block-end') {
-        if (chunk.block.type === 'tool-call') throw new Error('session-title-template: title response contains a tool call');
-        if (!blocks.get(index)?.closed) blocks.set(index, { text: chunk.block.type === 'text' ? chunk.block.text : '', closed: true });
-      } else if (chunk.type === 'text-delta' && !blocks.get(index)?.closed) {
-        blocks.set(index, { text: (blocks.get(index)?.text ?? '') + chunk.text, closed: false });
-      }
-    }
-    combined.throwIfAborted();
-    if (finish?.kind !== 'stop') {
-      const error = new Error(`session-title-template: unsuccessful terminal finish (${finish?.kind ?? 'missing'})`);
-      error.code = finish?.failure?.code ?? 'TITLE_STREAM_FAILED';
-      throw error;
-    }
-    return [...blocks.values()].map(block => block.text).join(' ');
-  } finally { clearTimeout(timer); }
-}
-
-export function apply(ctx, rawConfig) {
+export async function apply(ctx, rawConfig) {
   const config = resolveConfig(rawConfig);
   const lifetime = new AbortController();
   const profileDirectory = ctx.get?.('profileContext')?.dir;
@@ -83,26 +20,7 @@ export function apply(ctx, rawConfig) {
   const readInstructions = config.agentsInstructions.enabled
     ? createInstructionReader({ onDiagnostic: reason => state.note(`agents-instructions-${reason}`) }) : undefined;
   const forcedRefreshes = new Set();
-  ctx.inject?.(['tools'], async (toolCtx) => {
-    const { defineTool } = await import('@deepseek-ai/dsh-tools');
-    if (lifetime.signal.aborted) return;
-    registerRenameTool(toolCtx, defineTool, async (session, signal) => {
-      const id = String(session.id);
-      forcedRefreshes.add(id);
-      try { return await ctx.sessionTitle.refresh(session, signal); }
-      finally { forcedRefreshes.delete(id); }
-    });
-  });
-  if (config.agentsInstructions.enabled) {
-    ctx.inject?.(['systemPrompt'], (promptCtx) => {
-      promptCtx.systemPrompt.section({
-        name: `${name}:coordination`,
-        order: promptCtx.systemPrompt.getSectionOrder('TOOL_SESSION_QUERY') + 1,
-        interpolate: false,
-        text: 'Automatic session naming is managed by session-title-template. Do not call a session rename tool merely to satisfy standing session-naming rules in AGENTS.md; the title provider reads applicable naming excerpts itself. When the user explicitly asks to rename the session, call rename_current_session with the complete title and report the accepted result; do not ask the user to edit the GUI when this tool is available. Continue to follow all other applicable workspace instructions.',
-      });
-    });
-  }
+  await registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId: name });
   const titleOptions = (date) => ({ pattern, date, template: config.template, types: config.types, cjkSpacing: config.cjkSpacing, topicMaxChars: config.topicMaxChars });
   let backfillRun;
   let timer;
@@ -165,7 +83,9 @@ export function apply(ctx, rawConfig) {
       let failure;
       for (const target of routes) {
         try {
-          const text = await titleCall(ctx, config, request, target, system, input, messageSeqs, signal);
+          const text = await titleCall({
+        ctx, config, request, route: target, system, input, messageSeqs, signal, providerId: name,
+      });
           signal.throwIfAborted();
           const parsed = parseModelTitle(text, options);
           if (!parsed) throw new Error('session-title-template: model output did not match the title template');

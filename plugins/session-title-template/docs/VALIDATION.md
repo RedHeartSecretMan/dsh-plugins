@@ -1,6 +1,6 @@
 # session-title-template 验证范围与行为边界
 
-当前发布：`0.1.0`。验证环境包括已安装的 DSH `0.2.1-rc.3` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.1.0](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.0/session-title-template-0.1.0.tgz)。
+当前发布：`0.1.1`。验证环境包括已安装的 DSH `0.2.1-rc.3` 与 `0.2.2-rc.1` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.1.1](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz)。
 
 ## 已验证的契约
 
@@ -10,7 +10,7 @@
 | 标题格式 | 日期取自会话创建时间；已有标题要求规范格式和正确日期；模型输出可宽容处理括号、Markdown 包裹和省略日期 |
 | 模板与字符 | 占位符恰好一次且可辨识；字段重排、后缀和字面美元文本可往返；截断按 Unicode 码点计算 |
 | 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含转义；优先保留首条和最新消息 |
-| 配置 | 字段、路由成对、词表和占位符校验；支持配置别名并拒绝冲突或未知字段；`agentsInstructions` 仅接受 boolean `enabled` 和 `256` 至 `65536` 整数 `maxBytes`，解析结果独立冻结 |
+| 配置 | 字段、路由成对、词表和占位符校验；拒绝未知字段和已移除的旧别名 `maxExploreRefinements` / 顶层 `retitle`；`agentsInstructions` 仅接受 boolean `enabled` 和 `256` 至 `65536` 整数 `maxBytes`，解析结果独立冻结 |
 | AGENTS 发现 | 懒加载内置 `@deepseek-ai/dsh-agent-instructions` 的公开 helper 并支持 profile 回退解析；只处理 `AGENTS.md`、`AGENTS.local.md`，按全局 `DSH_HOME`、`DSH_AGENTS_HOME` 及默认 `.git` 根目录至当前工作目录范围发现 |
 | AGENTS 提取 | 中文“会话/对话”与“命名/标题”组合或英文 session/conversation 与 naming/title 组合标题；忽略围栏代码块标题；支持显式 `session-title-template:start/end` 注释标记 |
 | AGENTS 预算与失败 | 仅命名片段进入最终 UTF-8 补充预算，优先保留更具体作用域；源读取有界、软超时；无规则、SDK 或读取失败沿用原有命名行为 |
@@ -25,6 +25,8 @@
 单元与回归测试共 158 项，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析、工具参数和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果，`npm run check` 对所有入口和脚本执行语法检查。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。已改用正式 profile resolver，不再人工映射 SDK。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
+
+`test/verify-gateway.mjs` 是可选的真实网关检查，默认关闭；它需要 `RUN_SESSION_TITLE_LIVE=1`、网关地址和凭证，使用真实 `LlmRuntime`、`pi-ai` 适配器和真实标题服务生成一次标题，只校验格式、provider 和模型来源。2026-11-05 已对本地 Magpie 网关的 `auto/deepseek-flash` 实测通过；工具注册与提示词协调仍由 `verify-runtime.mjs` 覆盖，该 live 检查不进入 CI。
 
 实际启用状态应从当前 Host 的插件清单核对；安装命令成功本身不等于当前进程已经切换。
 
@@ -52,3 +54,4 @@
 - [改名工具测试](../test/rename.test.js)
 - [状态测试](../test/state.test.js)
 - [安装版 SDK 验收](../scripts/verify-runtime.mjs)
+- [真实网关标题生成](../test/verify-gateway.mjs)

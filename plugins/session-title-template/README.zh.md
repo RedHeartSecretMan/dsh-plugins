@@ -12,12 +12,12 @@
 
 ## 安装和兼容性
 
-需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
+需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3` 与 `0.2.2-rc.1` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
-包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.1.0`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.0/session-title-template-0.1.0.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.1.1`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.0/session-title-template-0.1.0.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz
 ```
 
 也可以从仓库目录安装：
@@ -146,7 +146,12 @@ npm test
 npm run check
 ```
 
-测试全部使用临时目录，包括 AGENTS 发现、片段提取与字节限制、配置校验、命名协调、两个进程并发写入、失败落盘后重试、只读回填预检和卸载取消。`scripts/verify-runtime.mjs <runtime-root>` 可进一步接入已安装的真实 DSH 服务；ASAR 安装需通过 Electron 的 Node carrier 执行。它通过真实 profile linked-peer resolver、工具注册器和标题服务验证发现/刷新/改名；LLM 和磁盘 durability listener 是 fixture，不等同于外部模型可用性或完整生产 writer 的重启恢复测试。
+测试全部使用临时目录，包括 AGENTS 发现、片段提取与字节限制、配置校验、命名协调、两个进程并发写入、失败落盘后重试、只读回填预检和卸载取消。`scripts/verify-runtime.mjs <runtime-root>` 可进一步接入已安装的真实 DSH 服务；ASAR 安装需通过 Electron 的 Node carrier 执行。它通过真实 profile linked-peer resolver、工具注册器和标题服务验证发现/刷新/改名；LLM 和磁盘 durability listener 是 fixture，不等同于外部模型可用性或完整生产 writer 的重启恢复测试；真实模型冒烟测试使用可选的 `test/verify-gateway.mjs`（`RUN_SESSION_TITLE_LIVE=1` 加网关/模型）：
+
+```sh
+RUN_SESSION_TITLE_LIVE=1 SESSION_TITLE_GATEWAY=http://127.0.0.1:3425/v1 SESSION_TITLE_MODEL=auto/deepseek-flash MAGPIE_GATEWAY_KEY=... \
+ELECTRON_RUN_AS_NODE=1 '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness' test/verify-gateway.mjs
+```
 
 [验证范围与行为边界](docs/VALIDATION.md)说明已核对的契约及使用限制。
 

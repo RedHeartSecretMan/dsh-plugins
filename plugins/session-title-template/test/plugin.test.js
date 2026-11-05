@@ -88,7 +88,7 @@ function fixture({ snapshot, replies = [[{ type: 'text-delta', index: 0, text: t
   };
   const session = { id: 'fixture', append(type, data) { appends.push({ type, data }); }, header: { createdAt: Date.UTC(2026, 9, 24, 17, 30) }, requestHeader: () => ({ config: { provider: 'primary', model: 'old-model' } }) };
   const request = { session, messages: [{ seq: 1, text: '修复登录超时' }], signal: new AbortController().signal, ...(snapshot ? { currentTitle: snapshot } : {}) };
-  return { ctx, calls, appends, request, generate(config = {}) { apply(ctx, config); return provider.generate(request); }, dispose: async () => { for (const fn of effects.reverse()) await fn(); } };
+  return { ctx, calls, appends, request, async generate(config = {}) { await apply(ctx, config); return provider.generate(request); }, dispose: async () => { for (const fn of effects.reverse()) await fn(); } };
 }
 test('first automatic fallback is not an explicit refresh and keeps the primary route', async () => {
   const f = fixture({ snapshot: { title: '修复登录超时', source: { kind: 'fallback' }, messageSeqs: [1], eventSeq: 2 } });

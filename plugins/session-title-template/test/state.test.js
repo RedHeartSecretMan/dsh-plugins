@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 
@@ -21,8 +22,8 @@ async function fixture(t) {
   return { directory, store };
 }
 
-/** Children have no piped output and never inherit a real state location. */
-function childWriter(directory, prefix) {
+/** Run one child with no inherited state; capture only its stderr tail. */
+function spawnChildWriter(directory, prefix) {
   const source = `
     import { createStateStore } from ${JSON.stringify(stateModule.href)};
     const store = createStateStore({ directory: ${JSON.stringify(directory)} });
@@ -35,15 +36,45 @@ function childWriter(directory, prefix) {
   return new Promise((done, reject) => {
     const child = spawn(process.execPath, ["--input-type=module", "--eval", source], {
       env: { ...process.env, DSH_HOME: directory, DSH_PROFILE_DIR: directory, DSH_PROFILE: "fixture" },
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });
-    child.once("error", reject);
+    let stderr = "";
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4096); });
+    const timer = setTimeout(() => { child.kill(); }, 30_000);
+    timer.unref?.();
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error); else done();
+    };
+    child.once("error", finish);
     child.once("exit", (code, signal) => {
-      if (code === 0) done();
-      else reject(new Error(`State fixture child failed (code ${code}, signal ${signal})`));
+      if (code === 0) return finish();
+      const detail = stderr.trim() ? `\n${stderr.trim()}` : "";
+      finish(new Error(`State fixture child failed (code ${code}, signal ${signal})${detail}`));
     });
   });
+}
+
+/** Children have no piped output and never inherit a real state location. */
+async function childWriter(directory, prefix) {
+  try {
+    await spawnChildWriter(directory, prefix);
+  } catch (first) {
+    // Windows CI occasionally loses a just-spawned child to AV/runner churn.
+    // A retry is safe: both writes are idempotent, and a deterministic failure
+    // still reports both the first and retried stderr.
+    await delay(100);
+    try {
+      await spawnChildWriter(directory, prefix);
+    } catch (second) {
+      throw new Error(`${first.message}\nretry failed: ${second.message}`);
+    }
+  }
 }
 
 describe("stateDirectory", () => {

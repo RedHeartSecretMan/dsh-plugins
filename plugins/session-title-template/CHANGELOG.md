@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 — 2026-11-05
+
+- Split the title provider entry: route selection and the model request now live in `lib/run.js`, while tool registration and the naming coordination section live in `lib/coordination.js`. `index.js` keeps only configuration, provider registration, backfill and lifecycle wiring.
+- Await the deferred Cordis `inject` fibers so tool and system-prompt registration complete before `apply()` returns on newer runtimes.
+- Update `scripts/verify-runtime.mjs` for the newer runtime service composition (native tool executor and the `agents` surface); the installed-Harness contract check passes on `0.2.2-rc.1`.
+- Harden the multi-process state fixture on Windows CI: capture child stderr and retry one transient child exit.
+- Add an opt-in `test/verify-gateway.mjs` live check for real title generation through the installed LLM runtime and an OpenAI-compatible gateway; the local Magpie `auto/deepseek-flash` run passes.
+- No user-visible behavior change; 158 tests.
+
 ## 0.1.0 — 2026-11-04
 
 - Template-shaped session titles: configurable `[date][type] topic` template, date from the session creation time, controlled type vocabulary, CJK spacing and Unicode-aware topic limits.

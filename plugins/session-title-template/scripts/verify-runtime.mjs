@@ -11,8 +11,8 @@ if (!runtime) throw new Error('Pass the installed DSH runtime root');
 const installAnchor = join(resolve(runtime), 'package.json');
 const runtimeRequire = createRequire(installAnchor);
 const load = pkg => import(pathToFileURL(runtimeRequire.resolve(`@deepseek-ai/${pkg}`)).href);
-const [{ Context }, { default: Sessions }, { default: Projections }, { default: Titles }, { default: SystemPrompt }, { default: WorkingDirectory }, { default: Tools }, { loadProfileDirectory, createRuntimeResolution, PluginPackages }] = await Promise.all([
-  load('cordis'), load('dsh-session'), load('dsh-session-projection'), load('dsh-session-title'), load('dsh-system-prompt'), load('dsh-working-directory'), load('dsh-tools'), load('dsh-app-boot'),
+const [{ Context }, { default: Sessions }, { default: Projections }, { default: Titles }, { default: SystemPrompt }, { default: WorkingDirectory }, { default: Tools }, nativeExecutorModule, { loadProfileDirectory, createRuntimeResolution, PluginPackages }] = await Promise.all([
+  load('cordis'), load('dsh-session'), load('dsh-session-projection'), load('dsh-session-title'), load('dsh-system-prompt'), load('dsh-working-directory'), load('dsh-tools'), load('dsh-tool-executor-native'), load('dsh-app-boot'),
 ]);
 const home = await mkdtemp(join(tmpdir(), 'session-title-template-runtime-'));
 const previous = Object.fromEntries(['DSH_PROFILE_DIR', 'DSH_HOME', 'DSH_AGENTS_HOME'].map(key => [key, process.env[key]]));
@@ -42,7 +42,7 @@ try {
   await writeFile(join(home, 'project', 'AGENTS.md'), '# Session naming\nProjectNamingMarker.\n## Wording\nUse API nouns.\n# Engineering\nPROJECT_ENGINEERING_MUST_NOT_APPEAR');
   await writeFile(join(cwd, 'AGENTS.local.md'), '# Conversation titles\nLocalNamingMarker.');
   await writeFile(join(original, 'AGENTS.md'), '# Session naming\nWRONG_DIRECTORY_MUST_NOT_APPEAR');
-  await ctx.plugin(Sessions); await ctx.plugin(Projections); await ctx.plugin(SystemPrompt, {}); await ctx.plugin(Tools);
+  await ctx.plugin(Sessions); await ctx.plugin(Projections); await ctx.plugin(SystemPrompt, {}); await ctx.plugin(Tools); await ctx.plugin(nativeExecutorModule);
   ctx.provide('fs', {});
   await ctx.plugin(WorkingDirectory, { defaultDirectory: original });
   ctx.provide('llm', { async prepareCall(config) { return { config, async *stream(options) {
@@ -56,10 +56,18 @@ try {
     yield { type: 'text-delta', index: 0, text: '[0101][修复] 排查登录失败' };
     yield { type: 'finish', reason: { kind: 'stop' } };
   } }; } });
+  ctx.provide('agents', {
+    get: () => undefined,
+    async resume() { throw new Error('agents fixture does not resume'); },
+    turnBoundaryOf: () => ({ lastStepBoundary: { kind: 'start' } }),
+  });
   await ctx.plugin(Titles, { fallbackMaxWords: 8, fallbackMaxBytes: 96, maxTitleBytes: 120 });
+  for (let i = 0; i < 100 && !ctx.get('sessionTitle'); i += 1) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.ok(ctx.get('sessionTitle'), 'sessionTitle service did not start');
   const installed = ctx.plugin(plugin, { provider: 'fixture', model: 'fixture' }); await installed;
+  const waitFor = async (check, label) => { for (let i = 0; i < 100; i += 1) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 10)); } throw new Error(`timed out: ${label}`); };
   const owner = 'session-title-template:coordination';
-  assert.ok((await ctx.systemPrompt.assemble()).sections.some(section => section.name === owner));
+  await waitFor(async () => (await ctx.systemPrompt.assemble()).sections.some(section => section.name === owner), 'coordination section');
   const session = ctx.sessions.create('contract-fixture', { meta: { createdAt: Date.UTC(2026, 9, 24, 17, 30), cwd: original } });
   const other = ctx.sessions.create('untouched', { meta: { cwd: original } });
   session.append('working-directory/change', { cwd });
