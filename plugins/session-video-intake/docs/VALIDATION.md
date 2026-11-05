@@ -1,6 +1,6 @@
 # session-video-intake 验证范围与行为边界
 
-当前发布：`0.1.0`。验证环境包括安装版 DSH `0.2.1-rc.3` 与 `0.2.1-rc.5`、pi-ai `1.1.0`、FFmpeg `9.0.2`，以及应用运行时 Node `24.21.0`。当前安装包为 [session-video-intake 0.1.0](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.0/session-video-intake-0.1.0.tgz)。
+当前发布：`0.1.1`。验证环境包括安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5` 与 `0.2.2-rc.1`、pi-ai `1.1.0`、FFmpeg `9.0.2`，以及应用运行时 Node `24.21.0`。当前安装包为 [session-video-intake 0.1.1](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz)。
 
 ## 已验证的契约
 
@@ -10,7 +10,7 @@
 | 能力来源 | 显式 `videoRoutes` 优先且不触发探测；未设置时使用目录探测；`catalogProbe.enabled: false` 时不探测；图片能力仍来自 `inputModalities`；provider 无法挂载 payload 钩子时视为不可注入，并在路由前以 `VIDEO_UNSUPPORTED` 失败 |
 | 目录探测 | 只对 OpenAI 兼容路由请求 `{baseURL}/models`；`modalities.input`/`input_modalities` 中出现 `video` 才算支持；条目缺失、字段缺失、非 200、网络异常、无 baseURL、非 OpenAI 协议都返回“未知”；凭证优先 credentials 服务、其次同名环境变量；正负结果都缓存，TTL 与 `clear()` 生效 |
 | 路由 | 原生视频和仅图片路由都保持用户选择的 provider/model；普通消息不改变路由对象；带视频历史的后续轮次仍会重新校验；多 agent 状态隔离 |
-| payload 投影 | 原视频以完全相同的字节和容器 MIME 进入 `video_url`（仅 Chat Completions）；仅图片路由得到 manifest + `image_url`（Completions）或 `input_image`（Responses）；声明原生视频但序列化为 Responses/未知形状时以 `VIDEO_SDK_UNSUPPORTED` 失败；无视频请求完全透传；非视频附件不读取字节 |
+| payload 投影 | 原视频以完全相同的字节和容器 MIME 进入 `video_url`（Completions）或 `input_video`（Responses）；仅图片路由得到 manifest + `image_url`（Completions）或 `input_image`（Responses）；未知形状以 `VIDEO_SDK_UNSUPPORTED` 失败；无视频请求完全透传；非视频附件不读取字节 |
 | 输入识别 | 只处理用户来源的视频文件和裸 HTTP(S) 链接；Markdown、代码段、引号内链接、assistant/tool 文本和非 MP4/WebM 文件保持原样 |
 | 限制与完整性 | 单文件、累计和数量上限在读取或发送前生效；容器签名、字节数和 SHA-256 均校验；取消在读取、构建和发送阶段都生效 |
 | storyboard | 时长解析、格数上下限、等分区间清单、网格参数、PNG 原样返回、临时目录清理；FFmpeg 缺失/执行失败/探测失败/取消分别映射为明确错误码 |
@@ -21,11 +21,11 @@
 | 卸载与生命周期 | 钩子按 adapter 拓扑重挂；卸载恢复原始 `streamSimple`；agent hook 随 agent 创建/销毁安装与移除 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-video-intake`，插件 id 与包名一致；显示名称由 locale 提供为“会话视频输入”；发布包包含 icon、locale、NOTICE 和运行脚本 |
 
-单元与回归测试共 96 项，运行 `npm test` 获取当前结果；`npm run check` 对全部入口和脚本执行语法检查。
+单元与回归测试共 97 项，运行 `npm test` 获取当前结果；`npm run check` 对全部入口和脚本执行语法检查。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 Harness。它通过应用自带运行时加载 ASAR 内 SDK，挂载真实的 `LlmRuntime`、`pi-ai` 适配器与本地附件存储；模型网关是本地 HTTP/SSE 替身，因此不验证外部模型的实时网络、凭据或配额。storyboard 使用真实 FFmpeg/FFprobe，缺失时跳过该段。该检查显式固定 `videoRoutes`，所以不触发目录探测；探测行为由 `test/catalog.test.js` 注入 `fetch` 覆盖。
 
-`scripts/verify-gateway.mjs` 是可选的真实网关检查，默认关闭；它需要 `RUN_SESSION_VIDEO_LIVE=1`、测试素材、网关地址和凭证。
+`scripts/verify-gateway.mjs` 是可选的真实网关检查，默认关闭；它需要 `RUN_SESSION_VIDEO_LIVE=1`、测试素材、网关地址和凭证。2026-11-05 已对本地 Magpie 网关的 `zhipu/glm-5.3-flash` 实测通过：原生视频附件得到工具调用，裸视频 URL 得到回答；`openai-completions` 与 `openai-responses` 两种路径均已实测，该检查不进入 CI。
 
 实际启用状态应从当前 Host 的插件清单核对；安装命令成功本身不等于当前进程已经切换。
 

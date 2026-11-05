@@ -4,6 +4,7 @@
  * @module session-video-intake/config
  */
 import { existsSync } from 'node:fs';
+import { STORYBOARD_DEFAULTS } from './defaults.js';
 
 const MIB = 1024 * 1024;
 
@@ -28,9 +29,7 @@ export const DEFAULTS = {
   storyboard: {
     enabled: true,
     sceneAware: true,
-    cells: 9,
-    cellEdge: 256,
-    timeoutMs: 120000,
+    ...STORYBOARD_DEFAULTS,
   },
 };
 

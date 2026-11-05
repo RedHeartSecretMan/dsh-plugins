@@ -15,26 +15,17 @@
  * equal-interval sampling when it is disabled or unavailable.
  */
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { planSegments, scanCuts, segmentTime } from './scenes.js';
+import { readVerifiedStoryboardBytes, STORYBOARD_MEDIA_CODES } from './attachment.js';
+import { failure } from './failure.js';
+import { STORYBOARD_DEFAULTS } from './defaults.js';
 
-const PREFIX = 'session-video-intake: ';
 const TEMP_PREFIX = 'session-video-storyboard-';
-const DEFAULT_CELLS = 9;
-const DEFAULT_CELL_EDGE = 256;
-const DEFAULT_TIMEOUT_MS = 120000;
 const STDERR_LIMIT = 500;
 const MAX_STDOUT_BYTES = 32 * 1024 * 1024;
-
-function failure(message, code, cause) {
-  const error = cause === undefined
-    ? new Error(`${PREFIX}${message}`)
-    : new Error(`${PREFIX}${message}`, { cause });
-  return Object.assign(error, { code });
-}
 
 function isStoryboardFailure(error) {
   return typeof error?.code === 'string' && error.code.startsWith('VIDEO_STORYBOARD_');
@@ -218,29 +209,18 @@ function validateRef(ref) {
 }
 
 async function readAttachment(ref, attachments, signal) {
-  const chunks = [];
-  const hash = createHash('sha256');
-  let bytes = 0;
-  checkAbort(signal);
   try {
-    for await (const chunk of attachments.readFileStream(ref, signal)) {
-      checkAbort(signal);
-      if (!(chunk instanceof Uint8Array)) throw invalidSource('the attachment stream returned non-byte data');
-      const copy = Buffer.from(chunk);
-      bytes += copy.byteLength;
-      hash.update(copy);
-      chunks.push(copy);
-    }
+    return await readVerifiedStoryboardBytes({
+      ref,
+      attachments,
+      signal,
+      codes: STORYBOARD_MEDIA_CODES,
+    });
   } catch (error) {
     if (isStoryboardFailure(error)) throw error;
     if (isAbort(error, signal)) throw abortFailure(error?.cause ?? error);
     throw invalidSource(`could not read the video attachment: ${messageOf(error)}`, error?.cause ?? error);
   }
-  checkAbort(signal);
-  if (bytes !== ref.bytes || `sha256:${hash.digest('hex')}` !== ref.attachmentId) {
-    throw invalidSource(`attachment failed byte count or SHA-256 integrity verification (read ${bytes} bytes)`);
-  }
-  return Buffer.concat(chunks, bytes);
 }
 
 async function prepareSource({ source, name, signal, attachments, tempDir }) {
@@ -293,9 +273,9 @@ export function createStoryboardBuilder({
   run = createDefaultRunner(),
   ffmpegPath = 'ffmpeg',
   ffprobePath = 'ffprobe',
-  cells = DEFAULT_CELLS,
-  cellEdge = DEFAULT_CELL_EDGE,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  cells = STORYBOARD_DEFAULTS.cells,
+  cellEdge = STORYBOARD_DEFAULTS.cellEdge,
+  timeoutMs = STORYBOARD_DEFAULTS.timeoutMs,
   sceneAware = false,
   scan = scanCuts,
 } = {}) {

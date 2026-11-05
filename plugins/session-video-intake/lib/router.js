@@ -4,7 +4,7 @@
  * image-only routes get a storyboard, and routes with neither capability fail.
  */
 import { assertVideoCapability } from './capability.js';
-import { failure } from './payload.js';
+import { failure } from './failure.js';
 import { findBareVideoUrls, isVideoFileName } from './media-input.js';
 
 export { isVideoFileName } from './media-input.js';

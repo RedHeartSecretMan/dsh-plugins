@@ -312,13 +312,12 @@ test('image-only route: Responses payload gets input_image parts', async () => {
   assert.equal(item.content[1].detail, 'auto');
 });
 
-test('a Responses route cannot carry native video and fails explicitly', async () => {
+test('a native-video Responses route gets input_video with the verified data URL', async () => {
   const f = fixture({ video: true, image: true, shape: 'responses' });
-  await assert.rejects(
-    collect(f.stream(f.options([user(file(f.attachment))]))),
-    { code: 'VIDEO_SDK_UNSUPPORTED', message: /cannot carry video_url/ },
-  );
-  assert.equal(f.payloads.length, 0);
+  await collect(f.stream(f.options([user(file(f.attachment))])));
+  const item = f.payloads[0].input[0];
+  assert.deepEqual(item.content.map((part) => part.type), ['input_video']);
+  assert.match(item.content[0].video_url, /^data:video\/mp4;base64,/);
 });
 
 test('a route with neither capability fails explicitly', async () => {

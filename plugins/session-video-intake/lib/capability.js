@@ -12,7 +12,7 @@
  * changes, which also drops the probe's own cache.
  * @module session-video-intake/capability
  */
-import { failure } from './payload.js';
+import { failure } from './failure.js';
 import { createCatalogProbe, providerProfile } from './catalog.js';
 
 export function providerPiProvider(ctx, provider) {

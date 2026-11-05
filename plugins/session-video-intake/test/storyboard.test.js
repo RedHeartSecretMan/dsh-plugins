@@ -372,6 +372,31 @@ test('an already-aborted signal throws ABORTED before any work', async () => {
   assert.deepEqual(await storyboardTempDirs(), before);
 });
 
+test('cancellation during attachment read keeps the storyboard abort code', async () => {
+  const controller = new AbortController();
+  const data = Buffer.alloc(64, 7);
+  const attachments = {
+    async *readFileStream() {
+      yield data.subarray(0, 7);
+      controller.abort('test cancellation');
+      yield data.subarray(7);
+    },
+  };
+  const h = fixture();
+  await assert.rejects(
+    h.builder.build({
+      source: { kind: 'attachment', ref: refFor(data) },
+      signal: controller.signal,
+      attachments,
+    }),
+    (error) => {
+      assert.equal(error.code, 'VIDEO_STORYBOARD_ABORTED');
+      assert.match(error.message, new RegExp(`^${PREFIX}`));
+      return true;
+    },
+  );
+});
+
 test('cell count uses four as the floor and cells as the cap', async () => {
   const scenarios = [
     {

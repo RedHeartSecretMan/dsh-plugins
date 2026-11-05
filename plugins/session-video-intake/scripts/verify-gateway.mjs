@@ -14,6 +14,8 @@ if (process.env.RUN_SESSION_VIDEO_LIVE !== '1') throw new Error('Set RUN_SESSION
 const baseURL = process.env.SESSION_VIDEO_GATEWAY ?? 'http://127.0.0.1:3425/v1';
 const apiKeyEnv = process.env.SESSION_VIDEO_KEY_ENV ?? 'MAGPIE_GATEWAY_KEY';
 const modelId = process.env.SESSION_VIDEO_MODEL ?? 'auto/deepseek-flash';
+const api = process.env.SESSION_VIDEO_API ?? 'openai-completions';
+if (!['openai-completions', 'openai-responses'].includes(api)) throw new Error('SESSION_VIDEO_API must be openai-completions or openai-responses');
 const fixture = process.env.SESSION_VIDEO_FIXTURE;
 if (!fixture) throw new Error('Set SESSION_VIDEO_FIXTURE to an MP4 clip before running the live gateway test');
 if (!process.env[apiKeyEnv]) throw new Error(`${apiKeyEnv} is not set`);
@@ -55,7 +57,7 @@ try {
       magpie: {
         displayName: 'Magpie',
         apiKeyEnv,
-        api: 'openai-completions',
+        api,
         baseURL,
         models: [{ id: modelId, input: ['text', 'image'], contextWindow: 1048576, maxTokens: 8192, reasoningEfforts: { low: 'low', high: 'high', max: 'max' } }],
       },

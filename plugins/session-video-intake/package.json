@@ -1,6 +1,6 @@
 {
   "name": "@redheartsecretman/session-video-intake",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Video input for DeepSeek Harness: native video_url when the selected route supports video (explicit whitelist or provider catalog discovery), a scene-aware storyboard fallback when it only supports images, and an explicit failure otherwise. No provider is registered.",
   "keywords": [
     "dsh",
@@ -51,7 +51,7 @@
   "icon": "./icon.svg",
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
-    "check": "node --check index.js && node --check client.js && node --check lib/catalog.js && node --check lib/config.js && node --check lib/capability.js && node --check lib/payload.js && node --check lib/provider.js && node --check lib/router.js && node --check lib/scenes.js && node --check lib/storyboard.js && node --check scripts/verify-runtime.mjs && node --check scripts/verify-gateway.mjs"
+    "check": "node --check index.js && node --check client.js && node --check lib/catalog.js && node --check lib/config.js && node --check lib/capability.js && node --check lib/payload.js && node --check lib/provider.js && node --check lib/router.js && node --check lib/scenes.js && node --check lib/storyboard.js && node --check lib/attachment.js && node --check lib/capture.js && node --check lib/defaults.js && node --check lib/failure.js && node --check lib/native-video.js && node --check lib/request-scope.js && node --check lib/rewrite-tokens.js && node --check scripts/verify-runtime.mjs && node --check scripts/verify-gateway.mjs"
   },
   "dsh": {
     "bundle": {

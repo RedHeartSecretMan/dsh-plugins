@@ -16,12 +16,12 @@ Deciding "native video" needs extra information: DSH model metadata only has `te
 
 ## Install
 
-Requires Node.js 22+. The storyboard fallback additionally needs FFmpeg and FFprobe on the host. Verified against the installed DSH `0.2.1-rc.3` and `0.2.1-rc.5`; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
+Requires Node.js 22+. The storyboard fallback additionally needs FFmpeg and FFprobe on the host. Verified against the installed DSH `0.2.1-rc.3`, `0.2.1-rc.5` and `0.2.2-rc.1`; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-video-intake`, version `0.1.0`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.0/session-video-intake-0.1.0.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-video-intake`, version `0.1.1`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.0/session-video-intake-0.1.0.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz
 ```
 
 To install from a checkout instead:
@@ -90,8 +90,14 @@ streamed model reply
 - [lib/capability.js](lib/capability.js) resolves `video` / `image` / `injectable` per provider/model and clears its cache when the adapter topology changes.
 - [lib/catalog.js](lib/catalog.js) performs the fail-soft model-listing probe and caches its answers.
 - [lib/router.js](lib/router.js) validates capability before `prepareCall()`; ordinary messages never touch the route.
-- [lib/payload.js](lib/payload.js) wraps the existing provider's `streamSimple` and, inside `onPayload`, chooses `video_url` or storyboard images. Both Chat Completions `messages` and Responses `input` shapes are supported for storyboard images; native `video_url` requires Chat Completions. A route that declares native video but is serialized as Responses fails with `VIDEO_SDK_UNSUPPORTED` instead of silently storyboarding.
+- [lib/capture.js](lib/capture.js) records video blocks and bare URLs before core projects them to file handles.
+- [lib/request-scope.js](lib/request-scope.js) binds that record to the current request stream.
+- [lib/native-video.js](lib/native-video.js) turns verified attachment bytes into a `data:` URL.
+- [lib/attachment.js](lib/attachment.js) owns byte-count and SHA-256 verification shared by native video and storyboards.
+- [lib/rewrite-tokens.js](lib/rewrite-tokens.js) performs token replacement for either payload shape.
+- [lib/payload.js](lib/payload.js) holds the payload shapes and provider hook; it chooses `video_url` or storyboard images. Both Chat Completions `messages` and Responses `input` shapes support storyboards and native video: Chat Completions uses `video_url` with an object, Responses uses `input_video` with a `video_url` string. A route that declares native video but is serialized as an unknown shape fails with `VIDEO_SDK_UNSUPPORTED` instead of silently storyboarding.
 - [lib/storyboard.js](lib/storyboard.js) probes with FFprobe, samples cells with FFmpeg, tiles one PNG and writes a Chinese time manifest.
+- [lib/failure.js](lib/failure.js) owns the plugin error prefix and codes; [lib/defaults.js](lib/defaults.js) is the single source of storyboard defaults.
 - [lib/config.js](lib/config.js) validates the profile patch and resolves FFmpeg paths.
 
 The original FileBlock is never rewritten. Storyboards enter only the current request and are not written to the session log. Later follow-up turns are re-projected because the durable attachments remain in the session.
@@ -147,7 +153,7 @@ The storyboard approach follows [dsh-video-storyboard](https://github.com/SAOS-3
 - Supported containers are MP4 and WebM. Local files are checked for container signature, byte count and SHA-256.
 - Bare links must be HTTP(S) with a `.mp4`/`.webm` path; Markdown links, code spans and quoted links remain ordinary text.
 - Attaching to provider internals is deliberate: the profile keeps only its own routes. If a future SDK removes the pi-ai profile structure, the plugin fails clearly instead of guessing.
-- The payload hook handles the two OpenAI-compatible shapes the installed adapters produce. Native `video_url` is only written into Chat Completions `messages`; a declared native-video route serialized as Responses (or an unknown shape) fails with `VIDEO_SDK_UNSUPPORTED` rather than degrading silently.
+- The payload hook handles the two OpenAI-compatible shapes the installed adapters produce. Native video is written into Chat Completions `messages` as `video_url` or into Responses `input` as `input_video`; an unknown payload shape fails with `VIDEO_SDK_UNSUPPORTED` rather than degrading silently.
 
 ## Development
 
@@ -170,7 +176,13 @@ ELECTRON_RUN_AS_NODE=1 '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSe
 
 It covers the three route outcomes: native `video_url` with identical bytes, a real storyboard for an image-only route, and an explicit failure for a text-only route, and asserts that no second provider is registered. It pins routes explicitly, so the catalog probe is not exercised there; [test/catalog.test.js](test/catalog.test.js) covers discovery with an injected `fetch`.
 
-`scripts/verify-gateway.mjs` is an opt-in live check and needs `RUN_SESSION_VIDEO_LIVE=1`, `SESSION_VIDEO_FIXTURE`, `SESSION_VIDEO_GATEWAY` and working credentials.
+`scripts/verify-gateway.mjs` is an opt-in live check and needs `RUN_SESSION_VIDEO_LIVE=1`, `SESSION_VIDEO_FIXTURE`, `SESSION_VIDEO_GATEWAY` and working credentials; `SESSION_VIDEO_API` selects `openai-completions` (default) or `openai-responses`:
+
+```sh
+RUN_SESSION_VIDEO_LIVE=1 SESSION_VIDEO_FIXTURE=/path/to/clip.mp4 \
+SESSION_VIDEO_GATEWAY=http://127.0.0.1:3425/v1 SESSION_VIDEO_MODEL=zhipu/glm-5.3-flash MAGPIE_GATEWAY_KEY=... \
+ELECTRON_RUN_AS_NODE=1 '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness' scripts/verify-gateway.mjs
+```
 
 See [validation and behavior boundaries](docs/VALIDATION.md) for checked contracts and limits.
 

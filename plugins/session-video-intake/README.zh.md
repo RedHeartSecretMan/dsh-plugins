@@ -16,12 +16,12 @@
 
 ## 安装和兼容性
 
-需要 Node.js 22 或更新版本；storyboard 回退还需要本机 FFmpeg 和 FFprobe。已在安装版 DSH `0.2.1-rc.3` 与 `0.2.1-rc.5` 上验证，声明支持 `>=0.2.1-rc.3 <0.6.0`。
+需要 Node.js 22 或更新版本；storyboard 回退还需要本机 FFmpeg 和 FFprobe。已在安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5` 与 `0.2.2-rc.1` 上验证，声明支持 `>=0.2.1-rc.3 <0.6.0`。
 
-包名为 `@redheartsecretman/session-video-intake`，当前版本 `0.1.0`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.0/session-video-intake-0.1.0.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-video-intake`，当前版本 `0.1.1`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.0/session-video-intake-0.1.0.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz
 ```
 
 也可以从仓库目录安装：
@@ -90,8 +90,14 @@ provider 的 onPayload：
 - [lib/capability.js](lib/capability.js)：按 provider/model 解析 `video` / `image` / `injectable`，adapter 拓扑变化时清空缓存。
 - [lib/catalog.js](lib/catalog.js)：执行失败安全的模型目录探测并缓存结果。
 - [lib/router.js](lib/router.js)：在 `prepareCall()` 前校验能力；普通消息完全不触碰路由。
-- [lib/payload.js](lib/payload.js)：包装现有 provider 的 `streamSimple`，在 `onPayload` 里按能力选择 `video_url` 或 storyboard 图片；storyboard 图片同时支持 Chat Completions `messages` 与 Responses `input` 两种形状；原生 `video_url` 只写入 Chat Completions。声明了原生视频但实际序列化为 Responses 的路由会以 `VIDEO_SDK_UNSUPPORTED` 失败，而不是静默降级或误报“没有媒体能力”。
+- [lib/capture.js](lib/capture.js)：在核心把 FileBlock 投影成文件句柄前记录视频块与裸 URL。
+- [lib/request-scope.js](lib/request-scope.js)：把记录结果绑定到当前请求的流。
+- [lib/native-video.js](lib/native-video.js)：把校验后的附件构造成 `data:` URL。
+- [lib/attachment.js](lib/attachment.js)：原生视频与 storyboard 共用的字节数和 SHA-256 校验。
+- [lib/rewrite-tokens.js](lib/rewrite-tokens.js)：两种 payload 形状共用的 token 替换。
+- [lib/payload.js](lib/payload.js)：payload 形状与 provider 钩子；按能力选择原生视频或 storyboard 图片。Completions 与 Responses 两种形状都支持原生视频和 storyboard：Completions 使用对象形式的 `video_url`，Responses 使用字符串形式 `video_url` 的 `input_video`。未知形状以 `VIDEO_SDK_UNSUPPORTED` 失败，而不是静默降级或误报“没有媒体能力”。
 - [lib/storyboard.js](lib/storyboard.js)：FFprobe 探测、FFmpeg 采样并拼成一张 PNG，生成中文时间清单。
+- [lib/failure.js](lib/failure.js)：统一错误前缀与 code；[lib/defaults.js](lib/defaults.js)：storyboard 默认值的唯一来源。
 - [lib/config.js](lib/config.js)：校验 profile 配置并解析 FFmpeg 路径。
 
 原始 FileBlock 从不改写；storyboard 只进入当前请求，不写入会话日志。后续追问会重新投影，因为会话里仍保留原视频附件。
@@ -147,7 +153,7 @@ storyboard 做法参考 [dsh-video-storyboard](https://github.com/SAOS-3624/dsh-
 - 支持 MP4 和 WebM；本地文件会校验容器签名、字节数和 SHA-256。
 - 裸链接必须是 HTTP(S) 且路径以 `.mp4`/`.webm` 结尾；Markdown 链接、代码段和引号内链接保持文本。
 - 挂载 provider 内部结构是有意取舍：profile 只保留自己的路由。若未来 SDK 移除 pi-ai profile 结构，插件会明确失败而不是猜测。
-- payload 钩子覆盖当前已装适配器产生的两种 OpenAI 兼容形状。原生 `video_url` 只写入 Chat Completions `messages`；声明原生视频却序列化为 Responses（或未知形状）时以 `VIDEO_SDK_UNSUPPORTED` 失败，而不是静默降级。
+- payload 钩子覆盖当前已装适配器产生的两种 OpenAI 兼容形状。原生视频写入 Chat Completions `messages` 的 `video_url` 或 Responses `input` 的 `input_video`；未知形状以 `VIDEO_SDK_UNSUPPORTED` 失败，而不是静默降级。
 
 ## 开发
 
@@ -170,7 +176,13 @@ ELECTRON_RUN_AS_NODE=1 '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSe
 
 它覆盖三条路径：原生 `video_url` 字节一致、仅图片路由得到真实 storyboard、纯文本路由明确失败，并断言没有注册第二个 provider。该测试显式固定路由，因此不触发目录探测；探测行为由 [test/catalog.test.js](test/catalog.test.js) 注入 `fetch` 覆盖。
 
-`scripts/verify-gateway.mjs` 是可选的真实网关检查，需要 `RUN_SESSION_VIDEO_LIVE=1`、`SESSION_VIDEO_FIXTURE`、`SESSION_VIDEO_GATEWAY` 和可用凭证。
+`scripts/verify-gateway.mjs` 是可选的真实网关检查，需要 `RUN_SESSION_VIDEO_LIVE=1`、`SESSION_VIDEO_FIXTURE`、`SESSION_VIDEO_GATEWAY` 和可用凭证；`SESSION_VIDEO_API` 可选 `openai-completions`（默认）或 `openai-responses`。
+
+```sh
+RUN_SESSION_VIDEO_LIVE=1 SESSION_VIDEO_FIXTURE=/path/to/clip.mp4 \
+SESSION_VIDEO_GATEWAY=http://127.0.0.1:3425/v1 SESSION_VIDEO_MODEL=zhipu/glm-5.3-flash MAGPIE_GATEWAY_KEY=... \
+ELECTRON_RUN_AS_NODE=1 '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness' scripts/verify-gateway.mjs
+```
 
 校验范围与行为边界见 [docs/VALIDATION.md](docs/VALIDATION.md)。
 
