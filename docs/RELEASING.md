@@ -6,8 +6,8 @@
 
 | 项目 | 规则 |
 | --- | --- |
-| 版本 | 每个插件在自己的 `package.json` 里独立维护，例如两个插件都可以是 `0.1.1` |
-| tag | `<plugin>-v<version>`，例如 `session-video-intake-v0.1.1`；前缀避免两个插件同名 tag 冲突 |
+| 版本 | 每个插件在自己的 `package.json` 里独立维护，例如两个插件都可以是 `0.1.2` |
+| tag | `<plugin>-v<version>`，例如 `session-video-intake-v0.1.3`；前缀避免两个插件同名 tag 冲突 |
 | Release | 每个 tag 对应一个 Release，资产名 `<plugin>-<version>.tgz` |
 | 变更范围 | 一次提交只改一个插件；一次发布只处理一个插件 |
 | 基线例外 | 0.1.0 初始基线时两个插件共享同一个基线提交；从 0.1.1 起，tag 指向对应插件的 release 提交 |
@@ -26,7 +26,7 @@ node tools/status.mjs
 
 ## 发布单个插件
 
-当前基线是 `0.1.1`；下面以发布**下一个 patch** `0.1.2` 为例：
+当前基线是 `0.1.2`；下面以发布**下一个 patch** `0.1.3` 为例：
 
 ```bash
 cd plugins/session-video-intake
@@ -48,8 +48,8 @@ git commit -m "release(session-video-intake): v0.1.2"
 git push origin main
 
 # 4. 打 tag 并推送；工作流会自动验证、打包并创建 Release
-git tag session-video-intake-v0.1.2
-git push origin session-video-intake-v0.1.2
+git tag session-video-intake-v0.1.3
+git push origin session-video-intake-v0.1.3
 ```
 
 推送 tag 后，`.github/workflows/release-plugin.yml` 会：
@@ -66,11 +66,11 @@ git push origin session-video-intake-v0.1.2
 ```bash
 cd plugins/session-video-intake
 npm pack --pack-destination /tmp
-mv /tmp/redheartsecretman-session-video-intake-0.1.2.tgz /tmp/session-video-intake-0.1.2.tgz
-gh release create session-video-intake-v0.1.2 \
-  /tmp/session-video-intake-0.1.2.tgz \
+mv /tmp/redheartsecretman-session-video-intake-0.1.3.tgz /tmp/session-video-intake-0.1.3.tgz
+gh release create session-video-intake-v0.1.3 \
+  /tmp/session-video-intake-0.1.3.tgz \
   --repo RedHeartSecretMan/dsh-plugins \
-  --title "session-video-intake 0.1.2" \
+  --title "session-video-intake 0.1.3" \
   --notes "本次变更摘要"
 ```
 
