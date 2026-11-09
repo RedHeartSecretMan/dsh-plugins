@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 — 2026-11-06
+
+- Add adaptive automatic refresh: short acknowledgements and follow-ups skip model calls; explicit topic shifts, low lexical overlap, provisional titles and a periodic audit trigger evaluation.
+- Always pass the current title as a JSON anchor with explicit stability rules; an unchanged model title preserves provenance instead of emitting a rewrite.
+- Keep the three-part configurable template and existing tools unchanged.
+- 186 tests.
+
 ## 0.1.1 — 2026-11-05
 
 - Split the title provider entry: route selection and the model request now live in `lib/run.js`, while tool registration and the naming coordination section live in `lib/coordination.js`. `index.js` keeps only configuration, provider registration, backfill and lifecycle wiring.

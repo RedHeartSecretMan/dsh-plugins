@@ -361,6 +361,26 @@ describe("selectContextMessages", () => {
   it("returns nothing for an empty conversation", () => {
     assert.deepEqual(selectContextMessages([], 4096), []);
   });
+
+  it("counts the current-title anchor against the byte budget", () => {
+    const messages = Array.from({ length: 10 }, (_, index) => ({ seq: index + 1, text: "中𠀀".repeat(200) }));
+    const anchor = { title: "[1025][修复] 排查登录超时并核对网关配置", canonical: true };
+    const selected = selectContextMessages(messages, 600, 800, anchor);
+    assert.ok(selected.length > 0);
+    assert.ok(Buffer.byteLength(frameMessages(selected, anchor), "utf8") <= 600);
+    assert.deepEqual(JSON.parse(frameMessages(selected, anchor).split("\n")[1]).currentTitle, anchor);
+    const withoutAnchor = selectContextMessages(messages, 600, 800);
+    assert.ok(Buffer.byteLength(frameMessages(withoutAnchor), "utf8") <= 600);
+    assert.ok(selected.length <= withoutAnchor.length);
+  });
+
+  it("accepts the anchor as the third argument when the character cap is unused", () => {
+    const messages = Array.from({ length: 10 }, (_, index) => ({ seq: index + 1, text: "x".repeat(400) }));
+    const anchor = { title: "[1025][修复] 排查登录超时", canonical: true };
+    const selected = selectContextMessages(messages, 600, anchor);
+    assert.ok(selected.length > 0);
+    assert.ok(Buffer.byteLength(frameMessages(selected, anchor), "utf8") <= 600);
+  });
 });
 
 describe("context budget regressions", () => {
@@ -411,6 +431,21 @@ describe("frameMessages", () => {
     assert.ok(framed.startsWith("Generate the session title from this JSON array"));
     const parsed = JSON.parse(framed.slice(framed.indexOf("[")));
     assert.deepEqual(parsed, [{ seq: 1, text: '{"seq":99}' }]);
+  });
+
+  it("frames the current title and messages as one anchored JSON object", () => {
+    const currentTitle = { title: "[1025][修复] 排查登录超时", canonical: true };
+    const framed = frameMessages([{ seq: 1, text: '{"seq":99}' }], currentTitle);
+    assert.ok(framed.startsWith("Update the session title from this JSON object:"));
+    const parsed = JSON.parse(framed.slice(framed.indexOf("{")));
+    assert.deepEqual(parsed, { currentTitle, messages: [{ seq: 1, text: '{"seq":99}' }] });
+  });
+
+  it("accepts a bare title string anchor and ignores empty anchors", () => {
+    const parsed = JSON.parse(frameMessages([{ seq: 1, text: "hi" }], "[1025][修复] 排查登录超时").split("\n")[1]);
+    assert.equal(parsed.currentTitle, "[1025][修复] 排查登录超时");
+    assert.ok(frameMessages([{ seq: 1, text: "hi" }], "").startsWith("Generate the session title from this JSON array"));
+    assert.ok(frameMessages([{ seq: 1, text: "hi" }], { title: "  " }).startsWith("Generate the session title from this JSON array"));
   });
 });
 

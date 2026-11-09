@@ -8,10 +8,10 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3` and `0.2.2-rc.1` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-title-template`, version `0.1.1`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-title-template`, version `0.1.2`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz
 ```
 
 To install from a checkout instead:
@@ -67,7 +67,17 @@ Unknown keys produce an activation error rather than silently discarding setting
     fallbackType: explore
 ```
 
-The default Chinese vocabulary is 功能, 设计, 修复, 优化, 发布, 运维, 探索, 文档, 研究. `探索` is provisional. A canonical concrete title with the correct creation date is retained; summarized provisional titles refine within the message-count limit. Deterministic first-message fallbacks, including legacy provider-labelled fallbacks and Host-truncated fallbacks without model provenance, remain retryable after that window. Retaining a title preserves its model provenance. Model output is leniently normalized, but stored titles require canonical syntax and the correct date, so malformed legacy dates are not frozen as settled.
+The default Chinese vocabulary is 功能, 设计, 修复, 优化, 发布, 运维, 探索, 文档, 研究. `探索` is provisional. A canonical concrete title with the correct creation date is retained while the adaptive policy sees no reason to evaluate; summarized provisional titles refine when new substantive input arrives. Deterministic first-message fallbacks, including legacy provider-labelled fallbacks and Host-truncated fallbacks without model provenance, remain retryable. Retaining a title preserves its model provenance. Model output is leniently normalized, but stored titles require canonical syntax and the correct date, so malformed legacy dates are not frozen as settled.
+
+## Automatic refresh
+
+The provider follows the conversation automatically, but does not spend one model call per prompt. A cheap local policy decides whether a title evaluation is worthwhile:
+
+- Always evaluate: explicit refresh/targeted retitle, a fallback/recovery title, a non-canonical title, the first provider title, or a provisional title with new substantive input.
+- Evaluate on explicit topic-shift phrases, a substantive message with low lexical overlap against the current title and recent messages, and a periodic audit after six human messages or roughly 1,500 new UTF-8 bytes.
+- Skip short acknowledgements and continuation messages; the same evaluated messages are not evaluated again.
+
+When the model is called, the current title travels as a JSON anchor with explicit stability rules: a still-accurate title must be returned exactly unchanged, and only a materially changed main task justifies a rewrite. Returning the same title preserves its original provenance instead of creating a rewrite. The template, creation date, type vocabulary, length limits and explicit tools remain unchanged.
 
 ## AGENTS naming guidance
 
@@ -142,4 +152,4 @@ See [validation and behavior boundaries](docs/VALIDATION.md) for checked contrac
 
 ## License
 
-MIT.
+[MIT](LICENSE)

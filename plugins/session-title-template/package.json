@@ -1,6 +1,6 @@
 {
   "name": "@redheartsecretman/session-title-template",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Template-shaped session titles for DeepSeek Harness: a fixed [date][type] topic format with a controlled type vocabulary, CJK spacing, and optional backfill.",
   "keywords": [
     "dsh",
@@ -46,7 +46,7 @@
   "icon": "./icon.svg",
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
-    "check": "node --check index.js && node --check lib/title.js && node --check lib/instructions.js && node --check lib/config.js && node --check lib/state.js && node --check lib/backfill.js && node --check lib/rename.js && node --check lib/run.js && node --check lib/coordination.js && node --check scripts/verify-runtime.mjs && node --check test/verify-gateway.mjs"
+    "check": "node --check index.js && node --check lib/title.js && node --check lib/refresh-policy.js && node --check lib/instructions.js && node --check lib/config.js && node --check lib/state.js && node --check lib/backfill.js && node --check lib/rename.js && node --check lib/run.js && node --check lib/coordination.js && node --check scripts/verify-runtime.mjs && node --check test/verify-gateway.mjs"
   },
   "dsh": {
     "bundle": {

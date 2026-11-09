@@ -145,6 +145,7 @@ test('terminal error uses the configured fallback route', async () => {
 });
 test('partial output followed by terminal error is never committed', async () => {
   const f = fixture({ snapshot: { title: '[1025][探索] 排查登录问题', source: { kind: 'provider' }, messageSeqs: [1] }, replies: [[{ type: 'text-delta', index: 0, text: title }, finish('error')]] });
+  f.request.messages.push({ seq: 2, text: '继续排查登录问题并补充更多运行日志以及完整的排查记录' });
   try { await assert.rejects(f.generate(), /model failed|MODEL_FAILED|finish|terminal/i); } finally { await f.dispose(); }
 });
 test('closed text block wins without duplicating deltas', async () => {
@@ -203,3 +204,76 @@ test('auxiliary title request records the canonical message source kind', async 
     assert.deepEqual(recorded[0].data.messages[0].source, { kind: 'dsh-session-title-llm' });
   } finally { await f.dispose(); }
 });
+
+test('short acknowledgements keep a settled title without a model call', async () => {
+  const model = { provider: 'prior', model: 'prior-model' };
+  const f = fixture({ snapshot: { title, source: { kind: 'provider', model }, messageSeqs: [1], eventSeq: 2 } });
+  f.request.messages.push({ seq: 3, text: '谢谢，继续' });
+  try {
+    const result = await f.generate();
+    assert.equal(f.calls.length, 0);
+    assert.equal(result.title, title);
+    assert.deepEqual(result.messageSeqs, [1]);
+    assert.deepEqual(result.model, model);
+  } finally { await f.dispose(); }
+});
+
+test('an explicit topic-shift marker refreshes a settled title', async () => {
+  const updated = '[1025][设计] 设计缓存层方案';
+  const f = fixture({
+    snapshot: { title, source: { kind: 'provider', model: { provider: 'prior', model: 'prior-model' } }, messageSeqs: [1], eventSeq: 2 },
+    replies: [[{ type: 'text-delta', index: 0, text: updated }, finish()]],
+  });
+  f.request.messages.push({ seq: 3, text: '另外，帮我设计一个新的缓存层方案' });
+  try {
+    const result = await f.generate();
+    assert.equal(f.calls.length, 1);
+    assert.equal(result.title, updated);
+    assert.deepEqual(result.messageSeqs, [1, 3]);
+  } finally { await f.dispose(); }
+});
+
+test('a materially changed main task updates a settled title', async () => {
+  const updated = '[1025][运维] 部署新的内网代理服务';
+  const f = fixture({
+    snapshot: { title, source: { kind: 'provider', model: { provider: 'prior', model: 'prior-model' } }, messageSeqs: [1], eventSeq: 2 },
+    replies: [[{ type: 'text-delta', index: 0, text: updated }, finish()]],
+  });
+  f.request.messages.push({ seq: 3, text: '现在开始部署新的内网代理服务并验证网络连通性' });
+  try {
+    const result = await f.generate();
+    assert.equal(f.calls.length, 1);
+    assert.equal(result.title, updated);
+  } finally { await f.dispose(); }
+});
+
+test('a model answer equal to the current provider title keeps its provenance', async () => {
+  const model = { provider: 'prior', model: 'prior-model' };
+  const f = fixture({ snapshot: { title, source: { kind: 'provider', model }, messageSeqs: [1], eventSeq: 2 } });
+  f.request.messages.push({ seq: 3, text: '另外补充一下相关的排查结论和验证记录' });
+  try {
+    const result = await f.generate();
+    assert.equal(f.calls.length, 1);
+    assert.equal(result.title, title);
+    assert.deepEqual(result.messageSeqs, [1]);
+    assert.deepEqual(result.model, model);
+  } finally { await f.dispose(); }
+});
+
+test('the current title anchors both the system prompt and the framed input', async () => {
+  const current = { title: '[1025][探索] 排查旧的登录问题', canonical: true };
+  const f = fixture({ snapshot: { title: current.title, source: { kind: 'provider', model: { provider: 'prior', model: 'm' } }, messageSeqs: [1], eventSeq: 2 } });
+  f.request.messages.push({ seq: 3, text: '另外，请设计新的登录重试方案' });
+  try {
+    await f.generate();
+    assert.ok(f.calls[0].system.includes(JSON.stringify(current)));
+    assert.match(f.calls[0].system, /原样返回/);
+    assert.match(f.calls[0].system, /实质性变化/);
+    const input = f.calls[0].messages[0].content[0].text;
+    assert.match(input, /^Update the session title from this JSON object:/u);
+    const payload = JSON.parse(input.slice(input.indexOf('{')));
+    assert.deepEqual(payload.currentTitle, current);
+    assert.deepEqual(payload.messages.map(message => message.seq), [1, 3]);
+  } finally { await f.dispose(); }
+});
+

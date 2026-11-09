@@ -14,10 +14,10 @@
 
 需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3` 与 `0.2.2-rc.1` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
-包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.1.1`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.1.2`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz
 ```
 
 也可以从仓库目录安装：
@@ -76,6 +76,16 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 ```
 
 默认词表为功能、设计、修复、优化、发布、运维、探索、文档、研究。`探索` 带 `provisional: true`。已有**日期正确、格式规范**的具体类型标题会保留；已经总结过的暂定标题在消息数上限内继续细化。本地首句截断回退（含旧版本标记为 provider 的回退，以及被 Host 字节上限再截断且没有模型来源的回退）不受该窗口限制，路由恢复后继续尝试。保留标题时也保留已有模型来源。模型输出可宽容解析全角括号、缺日期和 Markdown 包裹，但已有标题使用严格校验，错误日期不会被当作“已定稿”。
+
+## 自动刷新
+
+插件会自动跟随对话，但不会每条消息都调用模型。本地轻量策略先判断是否值得评估：
+
+- 始终评估：显式刷新/定点重命名、fallback/recovery 标题、非规范标题、首个 provider 标题，以及出现新实质消息的 provisional 标题。
+- 触发评估：明确换题短语；与当前标题和近期消息词面重合度低的实质新消息；每 6 条人类消息或约 1,500 个新增 UTF-8 字节的周期审计。
+- 跳过短确认/继续消息；同一批已评估消息不重复评估。
+
+真正调用模型时，当前标题以 JSON anchor 传入，并附带明确稳定性规则：仍准确的标题必须原样返回，只有主任务实质变化才改写。模型返回同标题时保留原 provenance，不产生无意义的新标题事件。模板、创建日期、类型词表、长度限制和显式工具保持不变。
 
 ## AGENTS 命名指导
 
@@ -157,4 +167,4 @@ ELECTRON_RUN_AS_NODE=1 '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSe
 
 ## 许可证
 
-MIT。
+[MIT](LICENSE)

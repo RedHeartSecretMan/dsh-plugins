@@ -1,6 +1,6 @@
 # session-title-template 验证范围与行为边界
 
-当前发布：`0.1.1`。验证环境包括已安装的 DSH `0.2.1-rc.3` 与 `0.2.2-rc.1` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.1.1](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.1/session-title-template-0.1.1.tgz)。
+当前发布：`0.1.2`。验证环境包括已安装的 DSH `0.2.1-rc.3` 与 `0.2.2-rc.1` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.1.2](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz)。
 
 ## 已验证的契约
 
@@ -8,8 +8,10 @@
 |---|---|
 | 模型流 | 只接受正常 `stop`；错误、取消、token 截断和工具调用中的部分文本不成为标题；支持最终 text block 和不同备用路由 |
 | 标题格式 | 日期取自会话创建时间；已有标题要求规范格式和正确日期；模型输出可宽容处理括号、Markdown 包裹和省略日期 |
+| 自动刷新 | 不是每轮调用：短确认/继续跳过；显式刷新/重命名、fallback/recovery、非规范标题、provisional 新实质消息、明确换题、低词面重合与周期审计触发评估；同一消息水位不重复评估 |
+| 当前标题稳定性 | currentTitle 始终进入 prompt 与 JSON 输入，带 canonical 标志；模型按稳定性规则原样返回仍准确的标题；仅主任务实质变化时改写；显式 refresh/retitle 优先；同标题返回保留 provenance |
 | 模板与字符 | 占位符恰好一次且可辨识；字段重排、后缀和字面美元文本可往返；截断按 Unicode 码点计算 |
-| 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含转义；优先保留首条和最新消息 |
+| 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含 currentTitle anchor、转义和包装；优先保留首条和最新消息 |
 | 配置 | 字段、路由成对、词表和占位符校验；拒绝未知字段和已移除的旧别名 `maxExploreRefinements` / 顶层 `retitle`；`agentsInstructions` 仅接受 boolean `enabled` 和 `256` 至 `65536` 整数 `maxBytes`，解析结果独立冻结 |
 | AGENTS 发现 | 懒加载内置 `@deepseek-ai/dsh-agent-instructions` 的公开 helper 并支持 profile 回退解析；只处理 `AGENTS.md`、`AGENTS.local.md`，按全局 `DSH_HOME`、`DSH_AGENTS_HOME` 及默认 `.git` 根目录至当前工作目录范围发现 |
 | AGENTS 提取 | 中文“会话/对话”与“命名/标题”组合或英文 session/conversation 与 naming/title 组合标题；忽略围栏代码块标题；支持显式 `session-title-template:start/end` 注释标记 |
@@ -22,7 +24,7 @@
 | 状态与卸载 | 按 profile 隔离；原子写入和有界锁等待；错误后队列可恢复；卸载取消定时器并等待维护退出 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-title-template`，插件 id 与包名一致；显示名称由 locale 提供为“会话标题模板”；发布包包含全部运行资源 |
 
-单元与回归测试共 158 项，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析、工具参数和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果，`npm run check` 对所有入口和脚本执行语法检查。
+单元与回归测试共 186 项，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析、工具参数和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果，`npm run check` 对所有入口和脚本执行语法检查。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。已改用正式 profile resolver，不再人工映射 SDK。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
 
