@@ -118,7 +118,7 @@ test('assistant/tool URLs, markdown and non-video files do not trigger video han
     { role: 'assistant', content: [{ type: 'text', text: 'https://example.test/a.mp4' }] },
     { role: 'tool', content: [{ type: 'text', text: 'https://example.test/b.webm' }] },
     text('[clip](https://example.test/c.mp4) `https://example.test/d.webm`'),
-    { role: 'user', content: [{ type: 'file', attachment: { name: 'clip.mov' } }] },
+    { role: 'user', content: [{ type: 'file', attachment: { name: 'clip.rmvb' } }] },
   ];
   await f.invoke(f.agent, 'agent/pre-step', {
     agent: f.agent, messages, signal: new AbortController().signal,
@@ -156,5 +156,5 @@ test('containsVideoInput only accepts user-originated video', () => {
   assert.equal(containsVideoInput([video()]), true);
   assert.equal(containsVideoInput([text('https://cdn.test/clip.webm')]), true);
   assert.equal(containsVideoInput([{ role: 'assistant', content: [{ type: 'text', text: 'https://cdn.test/clip.mp4' }] }]), false);
-  assert.equal(containsVideoInput([{ role: 'user', content: [{ type: 'file', attachment: { name: 'clip.mov' } }] }]), false);
+  assert.equal(containsVideoInput([{ role: 'user', content: [{ type: 'file', attachment: { name: 'clip.rmvb' } }] }]), false);
 });

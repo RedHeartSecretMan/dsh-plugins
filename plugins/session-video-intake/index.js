@@ -14,7 +14,9 @@
  * registered and the selected route is never changed.
  * @module session-video-intake
  */
-import { resolveConfig, resolveToolPaths } from './lib/config.js';
+import { resolveConfig } from './lib/config.js';
+import { resolveFfmpeg } from './lib/ffmpeg.js';
+import { ensureManagedFfmpeg } from './lib/managed-ffmpeg.js';
 import { createCapabilityResolver } from './lib/capability.js';
 import { createVideoMiddleware } from './lib/payload.js';
 import { createVideoHookManager } from './lib/provider.js';
@@ -39,7 +41,10 @@ export function apply(ctx, rawConfig) {
   const storyboard = config.storyboard.enabled
     ? createStoryboardBuilder({
       run: createDefaultRunner(),
-      ...resolveToolPaths(config.storyboard),
+      resolveTools: () => resolveFfmpeg({
+        storyboard: config.storyboard,
+        managed: () => ensureManagedFfmpeg({ env: process.env }),
+      }),
       cells: config.storyboard.cells,
       cellEdge: config.storyboard.cellEdge,
       sceneAware: config.storyboard.sceneAware,

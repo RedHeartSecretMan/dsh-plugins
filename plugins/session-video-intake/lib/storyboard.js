@@ -24,7 +24,7 @@ import { failure } from './failure.js';
 import { STORYBOARD_DEFAULTS } from './defaults.js';
 
 const TEMP_PREFIX = 'session-video-storyboard-';
-const STDERR_LIMIT = 500;
+const STDERR_LIMIT = 4096;
 const MAX_STDOUT_BYTES = 32 * 1024 * 1024;
 
 function isStoryboardFailure(error) {
@@ -50,7 +50,7 @@ function stderrText(error) {
   const value = error?.stderr;
   if (value == null) return '';
   try {
-    return (Buffer.isBuffer(value) ? value.toString('utf8') : String(value)).slice(0, STDERR_LIMIT);
+    return (Buffer.isBuffer(value) ? value.toString('utf8') : String(value)).slice(-STDERR_LIMIT);
   } catch {
     return '';
   }
@@ -93,8 +93,8 @@ function runnerFailure(command, error, stderr, timeoutMs, timedOut, signal) {
  * Default runner backed by `child_process.execFile`.
  *
  * The built-in `signal` handling is supplemented with an explicit kill so an
- * aborted/timed-out child is definitely terminated. stderr is retained (first
- * 500 chars) in both the message and the `stderr` property for summarisation.
+ * aborted/timed-out child is definitely terminated. stderr is retained (last
+ * 4 KiB) in both the message and the `stderr` property for summarisation.
  */
 export function createDefaultRunner() {
   return function run(command, args, options = {}) {
@@ -273,6 +273,7 @@ export function createStoryboardBuilder({
   run = createDefaultRunner(),
   ffmpegPath = 'ffmpeg',
   ffprobePath = 'ffprobe',
+  resolveTools,
   cells = STORYBOARD_DEFAULTS.cells,
   cellEdge = STORYBOARD_DEFAULTS.cellEdge,
   timeoutMs = STORYBOARD_DEFAULTS.timeoutMs,
@@ -280,6 +281,11 @@ export function createStoryboardBuilder({
   scan = scanCuts,
 } = {}) {
   if (typeof run !== 'function') throw failure('run must be a function', 'VIDEO_STORYBOARD_INVALID_CONFIG');
+  if (resolveTools !== undefined && typeof resolveTools !== 'function') {
+    throw failure('resolveTools must be a function', 'VIDEO_STORYBOARD_INVALID_CONFIG');
+  }
+  const resolve = resolveTools ?? (async () => ({ ffmpegPath, ffprobePath }));
+  let preferredComposeMode;
   if (typeof ffmpegPath !== 'string' || !ffmpegPath) {
     throw failure('ffmpegPath must be a non-empty string', 'VIDEO_STORYBOARD_INVALID_CONFIG');
   }
@@ -300,11 +306,11 @@ export function createStoryboardBuilder({
     return run(command, args, options);
   }
 
-  async function probeVideo(input, signal) {
+  async function probeVideo(tools, input, signal) {
     checkAbort(signal);
     let result;
     try {
-      result = await runTool(ffprobePath, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', input], {
+      result = await runTool(tools.ffprobePath, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', input], {
         timeoutMs,
         signal,
       });
@@ -341,20 +347,22 @@ export function createStoryboardBuilder({
     };
   }
 
-  async function extractFrames({ input, count, cellTimes, tempDir, signal }) {
+  async function extractFrames(tools, { input, count, cellTimes, tempDir, signal }) {
     for (let index = 0; index < count; index++) {
       checkAbort(signal);
       const output = path.join(tempDir, `frame-${String(index).padStart(3, '0')}.jpg`);
       const args = [
+        '-hide_banner', '-loglevel', 'error',
         '-ss', cellTimes[index].toFixed(3),
         '-i', input,
         '-frames:v', '1',
+        '-update', '1',
         '-vf', `scale='min(${cellEdge},iw)':-2`,
         '-q:v', '4',
         output,
       ];
       try {
-        await runTool(ffmpegPath, args, { timeoutMs, signal });
+        await runTool(tools.ffmpegPath, args, { timeoutMs, signal });
       } catch (error) {
         throw commandFailure('ffmpeg', error, signal);
       }
@@ -363,22 +371,36 @@ export function createStoryboardBuilder({
     }
   }
 
-  async function composeSheet({ tempDir, cols, rows, signal }) {
+  async function composeSheet(tools, { tempDir, cols, rows, signal }) {
     const output = path.join(tempDir, 'storyboard.png');
-    const pattern = path.join(tempDir, '*.jpg');
-    const args = [
-      '-f', 'image2',
-      '-pattern_type', 'glob',
-      '-i', pattern,
-      '-vf', `tile=${cols}x${rows}:padding=4:margin=4`,
-      '-frames:v', '1',
-      output,
-    ];
-    try {
-      await runTool(ffmpegPath, args, { timeoutMs, signal });
-    } catch (error) {
-      throw commandFailure('ffmpeg', error, signal);
+    const modes = preferredComposeMode
+      ? [preferredComposeMode]
+      : (tools.composeModes ?? ['glob', 'image2']);
+    let lastError;
+    for (const mode of modes) {
+      const input = mode === 'glob'
+        ? ['-pattern_type', 'glob', '-i', path.join(tempDir, '*.jpg')]
+        : ['-start_number', '0', '-i', path.join(tempDir, 'frame-%03d.jpg')];
+      const args = [
+        '-hide_banner', '-loglevel', 'error',
+        '-f', 'image2',
+        ...input,
+        '-vf', `tile=${cols}x${rows}:padding=4:margin=4`,
+        '-frames:v', '1',
+        '-update', '1',
+        output,
+      ];
+      try {
+        await runTool(tools.ffmpegPath, args, { timeoutMs, signal });
+        preferredComposeMode = mode;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (isAbort(error, signal)) throw abortFailure(error?.cause ?? error);
+        if (mode !== 'glob' || !modes.includes('image2')) throw commandFailure('ffmpeg', error, signal);
+      }
     }
+    if (lastError && preferredComposeMode !== modes.at(-1)) throw commandFailure('ffmpeg', lastError, signal);
     checkAbort(signal);
     await requireNonEmptyFile(output, 'ffmpeg did not produce the storyboard image');
     let png;
@@ -419,10 +441,10 @@ export function createStoryboardBuilder({
   }
 
   /** Scene-aware plan with a safe fallback; cancellation still aborts. */
-  async function planFor({ input, duration, signal }) {
+  async function planFor(tools, { input, duration, signal }) {
     if (!sceneAware) return uniformPlan(duration);
     try {
-      const cuts = await scan({ input, ffmpegPath, duration, timeoutMs, signal });
+      const cuts = await scan({ input, ffmpegPath: tools.ffmpegPath, duration, timeoutMs, signal });
       if (!Array.isArray(cuts)) return uniformPlan(duration);
       if (cuts.length < 2) return uniformPlan(duration, Math.min(4, cells), cuts.length);
       const plan = planSegments(duration, cuts, { cells });
@@ -435,20 +457,21 @@ export function createStoryboardBuilder({
 
   async function build({ source, name, signal, attachments } = {}) {
     checkAbort(signal);
+    const tools = await resolve();
     let tempDir;
     try {
       tempDir = await mkdtemp(path.join(tmpdir(), TEMP_PREFIX));
       const prepared = await prepareSource({ source, name, signal, attachments, tempDir });
-      const probe = await probeVideo(prepared.input, signal);
+      const probe = await probeVideo(tools, prepared.input, signal);
 
-      const plan = await planFor({ input: prepared.input, duration: probe.duration, signal });
+      const plan = await planFor(tools, { input: prepared.input, duration: probe.duration, signal });
       const count = plan.count;
       const cellTimes = plan.segments.map(segmentTime);
       const cols = count <= 4 ? 2 : 3;
       const rows = Math.ceil(count / cols);
 
-      await extractFrames({ input: prepared.input, count, cellTimes, tempDir, signal });
-      const png = await composeSheet({ tempDir, cols, rows, signal });
+      await extractFrames(tools, { input: prepared.input, count, cellTimes, tempDir, signal });
+      const png = await composeSheet(tools, { tempDir, cols, rows, signal });
       checkAbort(signal);
 
       const manifest = buildManifest({

@@ -16,12 +16,12 @@
 
 ## 安装和兼容性
 
-需要 Node.js 22 或更新版本；storyboard 回退还需要本机 FFmpeg 和 FFprobe。已在安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5` 与 `0.2.2-rc.1` 上验证，声明支持 `>=0.2.1-rc.3 <0.6.0`。
+需要 Node.js 22 或更新版本；storyboard 回退需要可用的 FFmpeg/FFprobe。已有能力匹配的本地构建会直接复用；只有所有本地候选都不具备分镜能力时，才下载固定版本的 LGPL managed FFmpeg/FFprobe。已在安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5` 与 `0.2.2-rc.1` 上验证，声明支持 `>=0.2.1-rc.3 <0.6.0`。
 
-包名为 `@redheartsecretman/session-video-intake`，当前版本 `0.1.1`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-video-intake`，当前版本为 `0.1.2`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz
 ```
 
 也可以从仓库目录安装：
@@ -53,7 +53,7 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 | `storyboard.cells` | `9` | 网格最大格数（`4`–`16`）；短视频至少 4 格 |
 | `storyboard.cellEdge` | `256` | 单格宽度像素（`64`–`1024`） |
 | `storyboard.timeoutMs` | `120000` | 单次 FFprobe/FFmpeg 调用的超时 |
-| `storyboard.ffmpegPath` / `ffprobePath` | 自动探测 | 显式路径；否则依次使用 `SESSION_VIDEO_FFMPEG` / `SESSION_VIDEO_FFPROBE`、Homebrew 路径、裸命令 |
+| `storyboard.ffmpegPath` / `ffprobePath` | 自动探测 | 显式路径优先且不静默替换。否则探测 `SESSION_VIDEO_FFMPEG`、`$DSH_HOME/tools/ffmpeg/bin`、profile/Homebrew/PATH；只有都不具备分镜能力时才下载固定版本 LGPL managed 包 |
 
 确定某条路由接受 `video_url` 时可以显式固定，或彻底关闭原生视频：
 
@@ -67,6 +67,31 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
       cells: 6
       cellEdge: 320
 ```
+
+## FFmpeg 选择
+
+插件不假设某个固定 FFmpeg 版本：
+
+1. 显式 `storyboard.ffmpegPath` 权威；能力不足时直接报错，不静默换其他二进制。
+2. 否则依次探测 `SESSION_VIDEO_FFMPEG`、`$DSH_HOME/tools/ffmpeg/bin`、profile tools、Homebrew/`/usr/local/bin`、裸 `ffmpeg`。
+3. 只有 ffprobe 可用，且构建报告 `image2`、`scale`、`tile`、`mjpeg` 时才接受。
+4. 第一个合格候选直接使用，不下载。支持 glob 时以 glob 作为首选的**图片输入方式**；遇到不支持 glob 的构建，自动改用 image2 序列并缓存选择。两者只是读取同一组零填充帧文件的方式不同，不是两种分镜算法：抽帧、场景规划、格时间、网格布局和 tile filter 完全一致。
+5. 只有所有本地候选都不合格时，才下载固定版本 LGPL FFmpeg/ffprobe 到 `$DSH_HOME/tools/ffmpeg/managed/`；安装时尽力而为，首次分镜再重试，离线时插件仍可安装。见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 输入来源
+
+视频输入在模型看到之前统一归一化：
+
+| 来源 | 处理 |
+|---|---|
+| 拖放、粘贴、浏览器文件选择 | pathless `File` 上传，成为持久视频 `file` 块 |
+| 桌面 `+` 文件选择 | 稳定结构选择器转发 pathless `File`，不再变成 `@路径` 文本引用 |
+| `@/绝对路径.mp4` / Windows 路径 / UNC | 宿主读取文件、存为持久附件并替换引用 token |
+| `file://` 本地 URI | 与 `@` 相同的物化路径 |
+| 带支持后缀的裸 HTTP(S) URL | 捕获，按原生视频或 storyboard 处理 |
+| 直接视频 `file` 块 | 按扩展名或 `video/*` mediaType 识别 |
+
+默认支持 MP4、WebM、MOV、MKV、M4V、AVI、TS/MTS/M2TS、FLV、3GP、OGV。看起来像视频但无法物化的引用会以 `VIDEO_UNSUPPORTED_INPUT` 明确失败，不会静默当普通文本。
 
 ## 工作方式
 
@@ -188,4 +213,4 @@ ELECTRON_RUN_AS_NODE=1 '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSe
 
 ## 许可证
 
-MIT
+[MIT](LICENSE)

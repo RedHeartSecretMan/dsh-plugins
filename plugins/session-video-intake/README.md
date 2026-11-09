@@ -16,12 +16,12 @@ Deciding "native video" needs extra information: DSH model metadata only has `te
 
 ## Install
 
-Requires Node.js 22+. The storyboard fallback additionally needs FFmpeg and FFprobe on the host. Verified against the installed DSH `0.2.1-rc.3`, `0.2.1-rc.5` and `0.2.2-rc.1`; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
+Requires Node.js 22+. The storyboard fallback needs a capable FFmpeg/FFprobe; an existing capable build is reused, and a pinned LGPL managed pair is downloaded only when the capability probe rejects every local candidate. Verified against the installed DSH `0.2.1-rc.3`, `0.2.1-rc.5` and `0.2.2-rc.1`; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-video-intake`, version `0.1.1`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-video-intake`, version `0.1.2`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz
 ```
 
 To install from a checkout instead:
@@ -53,7 +53,7 @@ Override `id: session-video-intake` in your profile's user patch. The whole `con
 | `storyboard.cells` | `9` | Maximum grid cells (`4`–`16`); short videos use at least 4 |
 | `storyboard.cellEdge` | `256` | Width of one cell in pixels (`64`–`1024`) |
 | `storyboard.timeoutMs` | `120000` | Deadline for one FFprobe/FFmpeg invocation |
-| `storyboard.ffmpegPath` / `ffprobePath` | auto-detected | Explicit paths; otherwise `SESSION_VIDEO_FFMPEG` / `SESSION_VIDEO_FFPROBE`, then Homebrew, then the bare command |
+| `storyboard.ffmpegPath` / `ffprobePath` | auto-detected | Explicit paths are authoritative. Otherwise probe `SESSION_VIDEO_FFMPEG`, `$DSH_HOME/tools/ffmpeg/bin`, profile/Homebrew/PATH; only if none can compose a storyboard, download the pinned LGPL managed pair |
 
 Pin a route explicitly when you know it accepts `video_url`, or disable native video for a predictable all-storyboard setup:
 
@@ -67,6 +67,31 @@ Pin a route explicitly when you know it accepts `video_url`, or disable native v
       cells: 6
       cellEdge: 320
 ```
+
+## FFmpeg selection
+
+The plugin does not assume a specific FFmpeg build:
+
+1. An explicit `storyboard.ffmpegPath` is used as-is; if it is not capable, the request fails with the tried path instead of silently switching.
+2. Otherwise candidates are probed in order: `SESSION_VIDEO_FFMPEG`, `$DSH_HOME/tools/ffmpeg/bin`, the profile tools directory, Homebrew/`/usr/local/bin`, then bare `ffmpeg`.
+3. A candidate is accepted only when ffprobe works and the build reports `image2`, `scale`, `tile` and `mjpeg`.
+4. The first accepted candidate is used without downloading anything. `glob` is the primary **image-input mode** when the build supports it; an unsupported-glob error automatically retries the image2 sequence and caches that choice. These are two ways to read the same zero-padded frame files, not different storyboard algorithms: frame extraction, scene planning, cell times, grid layout and the tile filter are identical.
+5. Only when no local candidate qualifies does the plugin download a pinned LGPL FFmpeg/ffprobe pair into `$DSH_HOME/tools/ffmpeg/managed/`. The download is best-effort at install time, retries on first storyboard use, and keeps the plugin installable offline. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Input sources
+
+Video input is normalized before the model sees it:
+
+| Source | Handling |
+|---|---|
+| Drop, paste, browser file picker | pathless `File` upload, then a durable video `file` block |
+| Desktop `+` picker | stable structural selector forwards a pathless `File`; it no longer becomes an `@path` text reference |
+| `@/absolute/path.mp4` / Windows path / UNC | host reads the file, stores it as a durable attachment and replaces the reference token |
+| `file://` local URI | same materialization path as `@` |
+| Bare HTTP(S) URL with a supported extension | captured and sent as native video or a storyboard |
+| Direct video `file` block | captured by extension or `video/*` media type |
+
+Supported default containers include MP4, WebM, MOV, MKV, M4V, AVI, TS/MTS/M2TS, FLV, 3GP and OGV. A video-looking reference that cannot be materialized fails as `VIDEO_UNSUPPORTED_INPUT`; it is never silently treated as ordinary text.
 
 ## How it works
 
@@ -151,7 +176,7 @@ The storyboard approach follows [dsh-video-storyboard](https://github.com/SAOS-3
 - Storyboards are an approximation: scene detection is a heuristic, fast motion, flicker and continuous camera movement still lose detail, and audio is not transcribed.
 - The sheet is always PNG. Bare HTTP(S) links are read by FFmpeg directly and are not persisted into the attachment store.
 - Supported containers are MP4 and WebM. Local files are checked for container signature, byte count and SHA-256.
-- Bare links must be HTTP(S) with a `.mp4`/`.webm` path; Markdown links, code spans and quoted links remain ordinary text.
+- Bare links must be HTTP(S) with a supported video path; Markdown links, code spans and quoted links remain ordinary text.
 - Attaching to provider internals is deliberate: the profile keeps only its own routes. If a future SDK removes the pi-ai profile structure, the plugin fails clearly instead of guessing.
 - The payload hook handles the two OpenAI-compatible shapes the installed adapters produce. Native video is written into Chat Completions `messages` as `video_url` or into Responses `input` as `input_video`; an unknown payload shape fails with `VIDEO_SDK_UNSUPPORTED` rather than degrading silently.
 
@@ -188,4 +213,4 @@ See [validation and behavior boundaries](docs/VALIDATION.md) for checked contrac
 
 ## License
 
-MIT
+[MIT](LICENSE)

@@ -145,19 +145,28 @@ function browser({ consume = true, busy = false } = {}) {
   document.body = body;
   // A plugin adding DOM fails immediately; fixtures use Element directly.
   document.createElement = () => { throw new Error('plugin must not create DOM'); };
-  const card = new Element('div', 'JZLxKW_card', { 'data-composer-card': 'true' });
-  const row = new Element('div', 'JZLxKW_row');
-  const tools = new Element('div', 'JZLxKW_tools');
-  const commands = new Element('button', 'JZLxKW_add');
+  // Classes are deliberately unrelated to the installed CSS Module hashes:
+  // picker detection must not depend on generated class names at all.
+  const card = new Element('div', 'composer-card', { 'data-composer-card': 'true' });
+  const row = new Element('div', 'composer-row');
+  const tools = new Element('div', 'composer-tools');
+  const commands = new Element('button', 'composer-add');
   const picker = new HTMLInputElement();
-  const modes = new Element('div', 'JZLxKW_modes');
-  const editor = new Element('div', 'JZLxKW_input', {
+  const modes = new Element('div', 'composer-modes');
+  const editor = new Element('div', 'composer-input', {
     'data-composer-input': 'true', 'data-lexical-editor': 'true',
   });
   body.append(card);
   card.append(editor, row);
   row.append(tools);
   tools.append(commands, picker, modes);
+  // Wrap the picker the way a changed core DOM would, for the fail-open test.
+  const wrapPicker = () => {
+    const wrapper = new Element('div', 'picker-wrapper');
+    wrapper.parent = tools;
+    tools.children.splice(tools.children.indexOf(picker), 1, wrapper);
+    wrapper.append(picker);
+  };
 
   const intakes = [];
   const uploads = [];
@@ -253,9 +262,9 @@ function browser({ consume = true, busy = false } = {}) {
     return event;
   };
   return {
-    window, document, body, card, tools, picker, editor, Element, HTMLInputElement,
+    window, document, body, card, row, tools, picker, editor, Element, HTMLInputElement,
     Event, DragEvent, DataTransfer, context, errors, events, intakes, uploads, references,
-    texts, notices, nativeFile, transferFor, drop, paste, change, apply, dispose,
+    texts, notices, nativeFile, transferFor, drop, paste, change, apply, dispose, wrapPicker,
     registration: () => registration, byteReads: () => byteReads,
   };
 }
@@ -354,7 +363,7 @@ test('paste outside the composer or into another plugin overlay is untouched', (
   assert.equal(b.intakes.length, 0);
 });
 
-test('only the verified native composer picker routes through drop without accept mutations', async () => {
+test('the composer picker routes a chosen video through the same pathless upload as a drop', async () => {
   const b = browser();
   b.apply();
   const image = b.nativeFile('before.jpg', 'image/jpeg');
@@ -370,7 +379,26 @@ test('only the verified native composer picker routes through drop without accep
   assert.equal(b.intakes[0][0], image);
   assert.equal(b.intakes[0][2], ordinary);
   await assertVideoCopy(video, b.intakes[0][1]);
+  // The picked video must upload as a generic attachment, not become an
+  // @path text reference the host would only see as ordinary text.
+  assert.deepEqual(b.uploads.map(({ kind }) => kind), ['image', 'file']);
+  assert.equal(b.uploads[1].file.path, '');
+  assert.deepEqual(b.references.map(({ file }) => file), [ordinary]);
   assert.deepEqual(b.events.map(({ type }) => type), ['change', 'drop']);
+});
+
+test('picker detection ignores generated CSS Module class names entirely', () => {
+  const b = browser();
+  b.apply();
+  b.card.classes.clear();
+  b.row.classes.clear();
+  b.tools.classes.clear();
+  const video = b.nativeFile('picked.mkv', '');
+  const original = b.change([video]);
+  assert.equal(original.immediate, true);
+  assert.equal(b.uploads.length, 1);
+  assert.equal(b.uploads[0].file.path, '');
+  assert.equal(b.references.length, 0);
 });
 
 test('unrelated and slot file inputs never match the native picker', () => {
@@ -380,29 +408,51 @@ test('unrelated and slot file inputs never match the native picker', () => {
   const external = new b.HTMLInputElement();
   const slotInput = new b.HTMLInputElement();
   const nestedSlot = new b.HTMLInputElement();
+  const accepting = new b.HTMLInputElement();
+  accepting.accept = 'video/*';
+  const single = new b.HTMLInputElement();
+  single.multiple = false;
+  const visible = new b.HTMLInputElement();
+  visible.hidden = false;
   const slotWrapper = new b.Element();
   b.body.append(external);
   b.tools.append(slotInput, slotWrapper);
   slotWrapper.append(nestedSlot);
-  for (const input of [external, slotInput, nestedSlot]) {
+  for (const input of [external, slotInput, nestedSlot, accepting, single, visible]) {
     const original = b.change([video], input);
     assert.equal(original.immediate, false);
     assert.equal(input.value, 'C:\\fakepath\\picked.mp4');
-    assert.equal(input.accept, '');
   }
-  assert.equal(b.events.length, 3);
+  assert.equal(b.events.length, 6);
   assert.equal(b.intakes.length, 0);
+  assert.equal(b.uploads.length, 0);
+});
+
+test('an unrelated hidden multiple input in a composer overlay is rejected', () => {
+  const b = browser();
+  b.apply();
+  // Even a file input that shares the toolbar shape must not match when it
+  // lives in the composer's overlay rather than the tools row: the original
+  // core change flow keeps ownership.
+  b.card.attributes['data-composer-overlay'] = 'true';
+  const video = b.nativeFile('clip.mp4', 'video/mp4');
+  const original = b.change([video]);
+  assert.equal(original.immediate, false);
+  assert.equal(b.intakes.length, 1);
+  assert.equal(b.references[0].file, video);
+  assert.equal(b.uploads.length, 0);
 });
 
 test('changed picker DOM fails open to the original core picker flow', () => {
   const b = browser();
   b.apply();
-  b.tools.classes.clear();
+  b.wrapPicker();
   const video = b.nativeFile('picked.mp4', 'video/mp4');
   const original = b.change([video]);
   assert.equal(original.immediate, false);
   assert.equal(b.events.length, 1);
   assert.equal(b.references[0].file, video);
+  assert.equal(b.uploads.length, 0);
 });
 
 test('unload removes all listeners and restores host-path intake; reapply adds one set', () => {
@@ -598,11 +648,41 @@ test('a different control keeps ownership of its video drop', () => {
   assert.equal(b.intakes.length, 0);
 });
 
-test('unsupported video containers keep the stock file flow', () => {
+test('video MIME types and every supported extension forward as pathless uploads', async () => {
   const b = browser();
   b.apply();
-  const file = b.nativeFile('unsupported.mov', 'video/quicktime');
-  const event = b.drop([file]);
-  assert.equal(event.immediate, false);
-  assert.equal(b.references[0].file, file);
+  const cases = [
+    ['clip.bin', 'video/mp4'],
+    ['clip.mov', 'video/quicktime'],
+    ['clip.MP4', ''],
+    ['clip.webm', ''],
+    ['clip.mkv', ''],
+    ['clip.m4v', ''],
+    ['clip.avi', ''],
+    ['clip.ts', ''],
+    ['clip.mts', ''],
+    ['clip.m2ts', ''],
+    ['clip.flv', ''],
+    ['clip.3gp', ''],
+    ['clip.ogv', ''],
+  ];
+  for (const [name, type] of cases) b.change([b.nativeFile(name, type)]);
+  assert.equal(b.references.length, 0);
+  assert.equal(b.uploads.length, cases.length);
+  for (const { kind, file } of b.uploads) {
+    assert.equal(kind, 'file');
+    assert.equal(file.path, '', 'each forwarded video must lose its host path');
+  }
+  assert.equal(b.errors.length, 0);
+});
+
+test('unsupported containers and definitely non-video types keep the stock file flow', () => {
+  const b = browser();
+  b.apply();
+  const unsupported = b.nativeFile('unsupported.rmvb', 'application/octet-stream');
+  const plainTs = b.nativeFile('source.ts', 'text/plain');
+  assert.equal(b.drop([unsupported]).immediate, false);
+  assert.equal(b.drop([plainTs]).immediate, false);
+  assert.deepEqual(b.references.map(({ file }) => file), [unsupported, plainTs]);
+  assert.equal(b.uploads.length, 0);
 });

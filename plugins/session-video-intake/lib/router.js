@@ -5,16 +5,19 @@
  */
 import { assertVideoCapability } from './capability.js';
 import { failure } from './failure.js';
-import { findBareVideoUrls, isVideoFileName } from './media-input.js';
+import { findBareVideoUrls, findVideoFileReferences, isVideoAttachment } from './media-input.js';
 
-export { isVideoFileName } from './media-input.js';
+export { isVideoAttachment, isVideoFileName } from './media-input.js';
 
 function contentHasVideo(content) {
-  if (typeof content === 'string') return findBareVideoUrls(content).length > 0;
+  if (typeof content === 'string') {
+    return findBareVideoUrls(content).length > 0 || findVideoFileReferences(content).length > 0;
+  }
   if (!Array.isArray(content)) return false;
   return content.some((block) => {
-    if (block?.type === 'file') return isVideoFileName(block.attachment?.name ?? block.name);
-    return block?.type === 'text' && findBareVideoUrls(block.text).length > 0;
+    if (block?.type === 'file') return isVideoAttachment(block.attachment ?? block);
+    return block?.type === 'text'
+      && (findBareVideoUrls(block.text).length > 0 || findVideoFileReferences(block.text).length > 0);
   });
 }
 

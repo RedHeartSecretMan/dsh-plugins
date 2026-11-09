@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 — 2026-11-06
+
+- Reuse a local FFmpeg only when its probed capabilities can compose a storyboard; glob is the primary image-input mode when supported and image2 is the automatic fallback. This changes only how the same frame files are read, not the storyboard algorithm.
+- Download a pinned LGPL managed FFmpeg/ffprobe pair only when no capable local build exists; install-time best effort and first-use retry. See `THIRD_PARTY_NOTICES.md`.
+- Expand video formats and MIME detection; normalize desktop picker, `@absolute-path` and `file://` inputs into durable video attachments; explicit `VIDEO_UNSUPPORTED_INPUT` when a video-looking reference cannot be materialized.
+- Keep FFmpeg stderr tails, avoid the Windows glob failure, and verify native containers beyond MP4/WebM.
+- 133 tests.
+
 ## 0.1.1 — 2026-11-05
 
 - Split the host half into focused modules: `capture.js` (input capture), `request-scope.js` (per-request scope), `native-video.js` (verified bytes to a data URL), `rewrite-tokens.js` (shared token replacement), `failure.js` (error shape), `defaults.js` (storyboard defaults) and `attachment.js` (byte-count + SHA-256 verification).

@@ -1,6 +1,6 @@
 # session-video-intake 验证范围与行为边界
 
-当前发布：`0.1.1`。验证环境包括安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5` 与 `0.2.2-rc.1`、pi-ai `1.1.0`、FFmpeg `9.0.2`，以及应用运行时 Node `24.21.0`。当前安装包为 [session-video-intake 0.1.1](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.1/session-video-intake-0.1.1.tgz)。
+当前发布：`0.1.2`。验证环境包括安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5` 与 `0.2.2-rc.1`、pi-ai `1.1.0`、FFmpeg `9.0.2`，以及应用运行时 Node `24.21.0`。当前安装包为 [session-video-intake 0.1.2](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz)。
 
 ## 已验证的契约
 
@@ -11,17 +11,20 @@
 | 目录探测 | 只对 OpenAI 兼容路由请求 `{baseURL}/models`；`modalities.input`/`input_modalities` 中出现 `video` 才算支持；条目缺失、字段缺失、非 200、网络异常、无 baseURL、非 OpenAI 协议都返回“未知”；凭证优先 credentials 服务、其次同名环境变量；正负结果都缓存，TTL 与 `clear()` 生效 |
 | 路由 | 原生视频和仅图片路由都保持用户选择的 provider/model；普通消息不改变路由对象；带视频历史的后续轮次仍会重新校验；多 agent 状态隔离 |
 | payload 投影 | 原视频以完全相同的字节和容器 MIME 进入 `video_url`（Completions）或 `input_video`（Responses）；仅图片路由得到 manifest + `image_url`（Completions）或 `input_image`（Responses）；未知形状以 `VIDEO_SDK_UNSUPPORTED` 失败；无视频请求完全透传；非视频附件不读取字节 |
-| 输入识别 | 只处理用户来源的视频文件和裸 HTTP(S) 链接；Markdown、代码段、引号内链接、assistant/tool 文本和非 MP4/WebM 文件保持原样 |
+| 输入识别 | 处理用户 file 块（扩展名或 `video/*` mediaType）、裸 HTTP(S) 视频链接、`@绝对路径` 与 `file://` 本地引用；Markdown、代码段、引号内链接和 assistant/tool 文本保持原样 |
+| 本地引用 | `@`/`file://` 通过附件服务物化为持久附件；按规范化路径去重；文件不可读、为空、服务缺失或引用非法时以 `VIDEO_UNSUPPORTED_INPUT` 失败，不静默忽略 |
+| 输入归一化 | 桌面 `+` 与浏览器 picker 使用稳定结构选择器转发 pathless File；拖放、粘贴和 picker 共用同一 pathless 上传路径；不再依赖 composer CSS Module hash |
 | 限制与完整性 | 单文件、累计和数量上限在读取或发送前生效；容器签名、字节数和 SHA-256 均校验；取消在读取、构建和发送阶段都生效 |
-| storyboard | 时长解析、格数上下限、等分区间清单、网格参数、PNG 原样返回、临时目录清理；FFmpeg 缺失/执行失败/探测失败/取消分别映射为明确错误码 |
+| FFmpeg 选择 | 先探测本地候选（显式、环境变量、DSH_HOME、profile、Homebrew/PATH），只有 ffprobe + image2 + scale + tile + mjpeg 合格才接受；显式路径失败不静默替换；只有全部不合格才下载固定 LGPL managed 包；按路径与 mtime 缓存探测结果 |
+| storyboard | 时长解析、格数上下限、等分区间清单、网格参数、PNG 原样返回、临时目录清理；glob 可用时作为图片序列读取方式，不支持 glob 时自动重试 image2 序列并缓存；两种方式使用相同帧集合、抽帧时刻、场景规划与 tile 布局，分镜算法不变；FFmpeg 缺失/执行失败/探测失败/取消分别映射为明确错误码；stderr 保留尾部 4 KiB |
 | 场景规划 | 64×36 HSV 低帧率扫描、速率阈值、切点聚类与间隔抑制、内容段生成、合并/拆分到目标格数；切点少于 2 个时静止回退 4 格，扫描不可用时按时长回退；取消传播；真实素材（合成三场景）识别出 2 个切点并走场景分配 |
 | 默认 runner | 真实子进程检查 stdout、stderr 截断、超时终止、取消终止和 ENOENT 保留 |
-| 客户端 | 拖放、粘贴、文件选择的事件转发；克隆 File 去掉宿主路径但保留字节、名称和类型；非视频文件不接管 |
+| 客户端 | 拖放、粘贴、稳定结构文件选择器的事件转发；克隆 File 去掉宿主路径但保留字节、名称和类型；`video/*` MIME 与常见容器扩展名优先；非视频文件不接管 |
 | 安装版 SDK | 原生：`video_url` 与原始 **1,128,375 bytes** 完全一致；仅图片：真实 FFmpeg 生成 storyboard，payload 无 `video_url` 且有 PNG + 清单；纯文本模型：失败而非发送文件路径；`listProviders()` 仅含既有 provider |
 | 卸载与生命周期 | 钩子按 adapter 拓扑重挂；卸载恢复原始 `streamSimple`；agent hook 随 agent 创建/销毁安装与移除 |
-| 命名与资源 | 包名为 `@redheartsecretman/session-video-intake`，插件 id 与包名一致；显示名称由 locale 提供为“会话视频输入”；发布包包含 icon、locale、NOTICE 和运行脚本 |
+| 命名与资源 | 包名为 `@redheartsecretman/session-video-intake`，插件 id 与包名一致；显示名称由 locale 提供为“会话视频输入”；发布包包含 icon、locale、NOTICE、第三方许可说明和运行脚本 |
 
-单元与回归测试共 97 项，运行 `npm test` 获取当前结果；`npm run check` 对全部入口和脚本执行语法检查。
+单元与回归测试共 133 项，运行 `npm test` 获取当前结果；`npm run check` 对全部入口和脚本执行语法检查。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 Harness。它通过应用自带运行时加载 ASAR 内 SDK，挂载真实的 `LlmRuntime`、`pi-ai` 适配器与本地附件存储；模型网关是本地 HTTP/SSE 替身，因此不验证外部模型的实时网络、凭据或配额。storyboard 使用真实 FFmpeg/FFprobe，缺失时跳过该段。该检查显式固定 `videoRoutes`，所以不触发目录探测；探测行为由 `test/catalog.test.js` 注入 `fetch` 覆盖。
 

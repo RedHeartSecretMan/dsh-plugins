@@ -38,6 +38,7 @@ function fixture(options = {}) {
     probeError,
     ffmpegError,
     failAt,
+    tileErrorOnce = false,
     png = PNG,
   } = options;
   const calls = [];
@@ -45,6 +46,7 @@ function fixture(options = {}) {
   let tempDirectory;
   let probeBytes;
   let frameIndex = 0;
+  let tileFailures = 0;
 
   async function run(command, args, runOptions) {
     calls.push({ command, args: [...args], options: runOptions });
@@ -64,7 +66,12 @@ function fixture(options = {}) {
     const output = args.at(-1);
     if (typeof output !== 'string') throw new Error('ffmpeg call has no output path');
     tempDirectory ??= path.dirname(output);
-    const tile = args.includes('-pattern_type');
+    const tile = args.some((arg) => typeof arg === 'string' && arg.startsWith('tile='));
+    if (tile && tileErrorOnce && args.includes('-pattern_type') && tileFailures++ === 0) {
+      throw Object.assign(new Error('glob unsupported'), {
+        stderr: "Pattern type 'glob' was selected but globbing is not supported by this libavformat build",
+      });
+    }
     if (ffmpegError || failAt === 'ffmpeg' || (failAt === 'frame' && !tile) || (failAt === 'tile' && tile)) {
       throw ffmpegError ?? Object.assign(new Error('ffmpeg failed'), { stderr: 'ffmpeg stderr: codec failure' });
     }
@@ -79,6 +86,7 @@ function fixture(options = {}) {
 
   const builder = createStoryboardBuilder({
     run,
+    resolveTools: options.resolveTools,
     cells: options.cells,
     cellEdge: options.cellEdge,
     timeoutMs: options.timeoutMs,
@@ -117,12 +125,15 @@ async function storyboardTempDirs() {
     .sort();
 }
 
+const isTileCall = (call) => call.command === 'ffmpeg'
+  && call.args.some((arg) => typeof arg === 'string' && arg.startsWith('tile='));
+
 function framesOf(calls) {
-  return calls.filter((call) => call.command === 'ffmpeg' && !call.args.includes('-pattern_type'));
+  return calls.filter((call) => call.command === 'ffmpeg' && !isTileCall(call));
 }
 
 function tileOf(calls) {
-  return calls.find((call) => call.command === 'ffmpeg' && call.args.includes('-pattern_type'));
+  return calls.find((call) => isTileCall(call));
 }
 
 test('attachment source builds a verified storyboard and cleans up', async () => {
@@ -197,11 +208,13 @@ test('attachment source builds a verified storyboard and cleans up', async () =>
   const tile = tileOf(h.calls);
   assert.ok(tile, 'tile command expected');
   assert.deepEqual(tile.args, [
+    '-hide_banner', '-loglevel', 'error',
     '-f', 'image2',
     '-pattern_type', 'glob',
     '-i', path.join(h.tempDirectory, '*.jpg'),
     '-vf', 'tile=3x2:padding=4:margin=4',
     '-frames:v', '1',
+    '-update', '1',
     path.join(h.tempDirectory, 'storyboard.png'),
   ]);
   assert.equal(tile.options.timeoutMs, 120000);
@@ -209,6 +222,38 @@ test('attachment source builds a verified storyboard and cleans up', async () =>
 
   await assert.rejects(access(h.tempDirectory), (error) => error.code === 'ENOENT');
   assert.deepEqual(await storyboardTempDirs(), before, 'no temporary directory is left behind');
+});
+
+test('image2 sequence is the primary compose path when glob is not requested', async () => {
+  const data = Buffer.from('image2-fallback-video');
+  const h = fixture({
+    duration: 10,
+    resolveTools: async () => ({ ffmpegPath: 'ffmpeg', ffprobePath: 'ffprobe', composeModes: ['image2'] }),
+  });
+  await h.builder.build({
+    source: { kind: 'attachment', ref: refFor(data) },
+    attachments: attachmentsFor(data),
+  });
+  const tile = tileOf(h.calls);
+  assert.ok(tile);
+  assert.ok(!tile.args.includes('-pattern_type'));
+  assert.equal(tile.args[tile.args.indexOf('-start_number') + 1], '0');
+  assert.equal(tile.args[tile.args.indexOf('-i') + 1], path.join(h.tempDirectory, 'frame-%03d.jpg'));
+  assert.equal(tile.args[tile.args.indexOf('-update') + 1], '1');
+});
+
+test('a glob-unsupported failure retries once with image2 and caches the choice', async () => {
+  const data = Buffer.from('glob-fallback-video');
+  const h = fixture({ duration: 10, tileErrorOnce: true });
+  await h.builder.build({
+    source: { kind: 'attachment', ref: refFor(data) },
+    attachments: attachmentsFor(data),
+  });
+  const tiles = h.calls.filter((call) => isTileCall(call));
+  assert.equal(tiles.length, 2);
+  assert.ok(tiles[0].args.includes('-pattern_type'));
+  assert.ok(!tiles[1].args.includes('-pattern_type'));
+  assert.equal(tiles[1].args[tiles[1].args.indexOf('-start_number') + 1], '0');
 });
 
 test('a SHA-256 mismatch is rejected before probing', async () => {
@@ -305,7 +350,7 @@ test('a probe without a usable duration fails with PROBE_FAILED and cleans up', 
 });
 
 test('ffmpeg execution failures map to FAILED with bounded stderr and cause', async () => {
-  const stderr = 'x'.repeat(600);
+  const stderr = 'x'.repeat(6000);
   const thrown = Object.assign(new Error('frame extraction failed'), { code: 1, stderr });
   const h = fixture({ duration: 10, ffmpegError: thrown });
   const attachments = attachmentsFor(Buffer.from('video'));
@@ -315,8 +360,8 @@ test('ffmpeg execution failures map to FAILED with bounded stderr and cause', as
     (error) => {
       assert.equal(error.code, 'VIDEO_STORYBOARD_FAILED');
       assert.match(error.message, new RegExp(`^${PREFIX}`));
-      assert.ok(error.message.includes(stderr.slice(0, 500)), 'message carries the first 500 stderr chars');
-      assert.ok(!error.message.includes(stderr.slice(0, 501)), 'stderr is bounded at 500 chars');
+      assert.ok(error.message.includes(stderr.slice(-4096)), 'message carries the tail stderr');
+      assert.ok(!error.message.includes(stderr), 'stderr is bounded');
       assert.equal(error.cause, thrown);
       return true;
     },
@@ -451,17 +496,17 @@ test('default runner resolves stdout', async () => {
   assert.equal(stdout, 'storyboard-ok');
 });
 
-test('default runner reports the first 500 stderr characters and exit code', async () => {
-  const stderr = 'e'.repeat(600);
+test('default runner reports the tail of stderr and exit code', async () => {
+  const stderr = 'e'.repeat(6000);
   const run = createDefaultRunner();
   await assert.rejects(
     run(process.execPath, ['-e', `process.stderr.write(${JSON.stringify(stderr)}); process.exit(7);`], { timeoutMs: 5000 }),
     (error) => {
       assert.match(error.message, new RegExp(`^${PREFIX}`));
       assert.equal(error.code, 7);
-      assert.equal(error.stderr, stderr.slice(0, 500));
-      assert.ok(error.message.includes(stderr.slice(0, 500)));
-      assert.ok(!error.message.includes(stderr.slice(0, 501)));
+      assert.equal(error.stderr, stderr.slice(-4096));
+      assert.ok(error.message.includes(stderr.slice(-4096)));
+      assert.ok(!error.message.includes(stderr));
       return true;
     },
   );

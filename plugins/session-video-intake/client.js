@@ -7,18 +7,26 @@
  * generic file attachment. No decoding, byte reads, or upload API are needed.
  *
  * Compatibility seam: the core document drop listener accepts synthetic events
- * with a DataTransfer containing "Files" (no isTrusted check). The picker lacks
- * an identifying data attribute, so its exact native toolbar structure below
- * is deliberately pinned to the verified DSH composer. A changed structure is
- * left untouched.
+ * with a DataTransfer containing "Files" (no isTrusted check). The picker has
+ * no identifying data attribute and CSS Module class names change between DSH
+ * builds, so it is located by stable structure only: a hidden multiple
+ * `input[type=file][accept=""]` inside `[data-composer-card]`, sitting between
+ * the composer's commands button and its modes container. A picker change then
+ * takes the same pathless-upload path as a drop, so Desktop `+` selections no
+ * longer become `@path` text references. Any changed structure is left to the
+ * original core flow.
  */
 window.__ModuleLoader__.load({
   id: '@redheartsecretman/session-video-intake',
   factory() {
-    // Browser bundle cannot import lib/media-input.js; keep this check in sync.
-    const VIDEO_EXT = /\.(mp4|webm)$/i;
+    // Browser bundle cannot import lib/media-input.js; keep this list in sync.
+    const VIDEO_EXT = /\.(mp4|webm|mov|mkv|m4v|avi|ts|mts|m2ts|flv|3gp|ogv)$/i;
+    const NON_VIDEO_MIME = /^(image|audio|text)\//i;
+    // Prefer the browser's declared MIME type; fall back to the extension list
+    // for files whose type is empty or generic (common for .ts/.mts/.m2ts).
     const isVideo = (file) => file instanceof File
-      && !/^image\//i.test(file.type) && VIDEO_EXT.test(file.name);
+      && !NON_VIDEO_MIME.test(file.type)
+      && (file.type.startsWith('video/') || VIDEO_EXT.test(file.name));
 
     function composerPicker(input) {
       if (!(input instanceof HTMLInputElement) || input.type !== 'file'
@@ -26,14 +34,15 @@ window.__ModuleLoader__.load({
       const tools = input.parentElement;
       const row = tools?.parentElement;
       const card = row?.parentElement;
-      // Core puts its input between the commands button and modes, before the
-      // conversation.input.left slot. Never match other inputs in that slot.
-      return tools?.classList.contains('JZLxKW_tools') === true
-        && row?.classList.contains('JZLxKW_row') === true
-        && card?.matches('[data-composer-card]') === true
+      if (tools === null || row === null || card === null) return false;
+      // Core puts its input between the commands button and the modes
+      // container, before the conversation.input.left slot. Never match other
+      // inputs in that slot, inside an overlay, or deeper in a wrapper.
+      return card.matches('[data-composer-card]') === true
+        && input.closest('[data-composer-overlay]') === null
         && tools.children[1] === input
-        && input.previousElementSibling?.matches('button.JZLxKW_add') === true
-        && input.nextElementSibling?.matches('div.JZLxKW_modes') === true;
+        && input.previousElementSibling?.matches('button') === true
+        && input.nextElementSibling?.tagName === 'DIV';
     }
 
     function composerPasteTarget(target) {
