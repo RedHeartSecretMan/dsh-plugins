@@ -24,6 +24,8 @@ The package is `@redheartsecretman/session-video-intake`, version `0.1.2`. Insta
 dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz
 ```
 
+The package ships a `postinstall` hook that resolves FFmpeg and downloads the managed pair only when no local build qualifies. Package managers that gate install scripts skip it: pnpm reports `ERR_PNPM_IGNORED_BUILDS` and exits non-zero while still installing the package. Installing the package without running that hook is fine — the first storyboard repeats the same resolution — so approve it only if you want the download to happen at install time.
+
 To install from a checkout instead:
 
 ```sh

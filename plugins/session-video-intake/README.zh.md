@@ -24,6 +24,8 @@
 dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz
 ```
 
+包内带一个 `postinstall` 钩子：解析 FFmpeg，仅在没有合格的本地构建时才下载托管版本。会拦截安装脚本的包管理器会跳过它——pnpm 报 `ERR_PNPM_IGNORED_BUILDS` 并以非零码退出，但包本身已装好。不执行该钩子不影响使用，第一次生成分镜时会重做同样的解析；只有希望下载发生在安装阶段才需要放行。
+
 也可以从仓库目录安装：
 
 ```sh

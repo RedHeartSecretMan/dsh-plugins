@@ -90,3 +90,27 @@ test('candidate discovery includes DSH_HOME tools ahead of the bare command', ()
   assert.ok(result.pairs.some((pair) => pair.ffmpegPath === path.join('/tmp/dsh-home', 'tools', 'ffmpeg', 'bin', 'ffmpeg')));
   assert.equal(result.pairs.at(-1).ffmpegPath, 'ffmpeg');
 });
+
+test('a PATH-installed Windows FFmpeg is probed instead of skipped as missing', async () => {
+  // The generated bare name on win32 is `ffmpeg.exe`, which `existsSync` cannot
+  // resolve. Regression: it used to be rejected as "not found", so a capable
+  // local build was never used and a managed copy was downloaded instead.
+  const candidates = ffmpegCandidates({ storyboard: {}, env: {}, platform: 'win32' });
+  assert.equal(candidates.pairs.at(-1).ffmpegPath, 'ffmpeg.exe');
+  assert.equal(candidates.pairs.at(-1).ffprobePath, 'ffprobe.exe');
+
+  let managedCalls = 0;
+  const resolved = await resolveFfmpeg({
+    env: {},
+    platform: 'win32',
+    run: fakeRun(),
+    managed: async () => {
+      managedCalls += 1;
+      throw new Error('a capable local FFmpeg must not trigger a managed download');
+    },
+  });
+  assert.equal(resolved.capable, true);
+  assert.equal(resolved.ffmpegPath, 'ffmpeg.exe');
+  assert.equal(resolved.ffprobePath, 'ffprobe.exe');
+  assert.equal(managedCalls, 0);
+});

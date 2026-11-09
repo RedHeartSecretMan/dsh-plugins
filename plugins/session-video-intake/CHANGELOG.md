@@ -1,12 +1,13 @@
 # Changelog
 
-## 0.1.2 — 2026-11-06
+## 0.1.2 — 2026-11-06, hotfixed 2026-11-09
 
 - Reuse a local FFmpeg only when its probed capabilities can compose a storyboard; glob is the primary image-input mode when supported and image2 is the automatic fallback. This changes only how the same frame files are read, not the storyboard algorithm.
 - Download a pinned LGPL managed FFmpeg/ffprobe pair only when no capable local build exists; install-time best effort and first-use retry. See `THIRD_PARTY_NOTICES.md`.
 - Expand video formats and MIME detection; normalize desktop picker, `@absolute-path` and `file://` inputs into durable video attachments; explicit `VIDEO_UNSUPPORTED_INPUT` when a video-looking reference cannot be materialized.
 - Keep FFmpeg stderr tails, avoid the Windows glob failure, and verify native containers beyond MP4/WebM.
-- 133 tests.
+- Hotfix (2026-11-09): reuse a PATH-installed FFmpeg on Windows. The discovered bare candidate is named `ffmpeg.exe` there, while the pre-probe existence check only exempted the literal `ffmpeg`, so the binary was reported as `not found` without ever being probed. A capable local build was therefore skipped and a managed pair downloaded. Bare command names now go straight to the runner's PATH lookup, while paths and explicit names still fail fast when they do not exist.
+- 134 tests.
 
 ## 0.1.1 — 2026-11-05
 

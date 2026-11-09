@@ -161,9 +161,13 @@ export async function resolveFfmpeg({
   storyboard = {}, env = process.env, platform = process.platform, run = execFileAsync, managed,
 } = {}) {
   const { pairs, explicit } = ffmpegCandidates({ storyboard, env, platform });
+  // A bare command name is resolved through PATH by the runner, so it must not be
+  // stat-ed first. The generated name is platform-specific (`ffmpeg.exe` on
+  // win32), and an explicit `ffmpeg` stays accepted on every platform.
+  const bareCommands = new Set([executableName('ffmpeg', platform), 'ffmpeg']);
   const rejected = [];
   for (const pair of pairs) {
-    if (pair.ffmpegPath !== 'ffmpeg' && !existsSync(pair.ffmpegPath)) {
+    if (!bareCommands.has(pair.ffmpegPath) && !existsSync(pair.ffmpegPath)) {
       rejected.push(`${pair.ffmpegPath}: not found`);
       continue;
     }
