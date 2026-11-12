@@ -54,14 +54,10 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-agent-instructions": "*",
-    "@deepseek-ai/dsh-tools": "*"
+    "@deepseek-ai/dsh-agent-instructions": "*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-agent-instructions": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-tools": {
       "optional": true
     }
   },

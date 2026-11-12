@@ -79,7 +79,7 @@ try {
   // The installed format requires the canonical kind; the plugin name would make the
   // stored Session unreadable on the next cold load.
   assert.ok(auxiliary); assert.equal(auxiliary.data.titleProvider, plugin.name); assert.equal(auxiliary.data.messages[0].source.kind, 'dsh-session-title-llm');
-  // Registered through the actual tools service, with real defineTool validation.
+  // Registered through the actual tools service and validated there.
   const tool = ctx.tools.get('rename_current_session'); assert.ok(tool);
   const refreshTool = ctx.tools.get('refresh_current_session_title'); assert.ok(refreshTool);
   assert.deepEqual(Object.keys(tool.parameters.properties), ['title']);

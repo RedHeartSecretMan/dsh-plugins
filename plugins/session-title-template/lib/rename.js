@@ -8,17 +8,20 @@ async function flushTitle(ctx, session) {
 }
 
 /** Register only metadata operations owned by the calling agent's live session. */
-export function registerRenameTool(ctx, defineTool, refresh) {
-  ctx.tools.register(defineTool({
+export function registerRenameTool(ctx, refresh) {
+  ctx.tools.register({
     name: 'rename_current_session',
     description: 'Rename and pin the current session title only when the user explicitly asks. Follow applicable naming rules and the session creation date. The target comes from the calling agent; other sessions cannot be addressed. Use the accepted title returned by this tool when reporting success.',
     parameters: {
-      title: { type: 'string', required: true, description: 'The complete requested title, including any required date/type prefix.' },
+      type: 'object', additionalProperties: false,
+      properties: { title: { type: 'string', description: 'The complete requested title, including any required date/type prefix.' } },
+      required: ['title'],
     },
     output: {
       schema: {
         type: 'object', additionalProperties: false,
-        properties: { title: { type: 'string', required: true }, persisted: { type: 'boolean', required: true } },
+        properties: { title: { type: 'string' }, persisted: { type: 'boolean' } },
+        required: ['title', 'persisted'],
       },
       render: (_args, value) => [{ type: 'text', text: `Session title saved: ${value.title}` }],
     },
@@ -44,13 +47,13 @@ export function registerRenameTool(ctx, defineTool, refresh) {
       }
       return { title: actual.title, persisted: true };
     },
-  }));
-  if (refresh) ctx.tools.register(defineTool({
+  });
+  if (refresh) ctx.tools.register({
     name: 'refresh_current_session_title',
     description: 'Regenerate the current session title only when the user explicitly asks for a new automatic title. Bypasses automatic title stability and deliberately unpins a manually set title. The target comes from the calling agent; no other session can be addressed.',
-    parameters: {},
+    parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', required: true }, persisted: { type: 'boolean', required: true } } },
+      schema: { type: 'object', additionalProperties: false, properties: { title: { type: 'string' }, persisted: { type: 'boolean' } }, required: ['title', 'persisted'] },
       render: (_args, value) => [{ type: 'text', text: `Session title regenerated and saved: ${value.title}` }],
     },
     async execute(args, exec) {
@@ -65,5 +68,5 @@ export function registerRenameTool(ctx, defineTool, refresh) {
       if (actual?.eventSeq !== accepted.eventSeq || actual?.title !== accepted.title) throw new Error('Title changed while saving; inspect the current title before retrying');
       return { title: actual.title, persisted: true };
     },
-  }));
+  });
 }

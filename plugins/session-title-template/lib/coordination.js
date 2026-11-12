@@ -4,9 +4,8 @@ import { registerRenameTool } from './rename.js';
 export async function registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId }) {
   const fibers = [];
   fibers.push(ctx.inject?.(['tools'], async (toolCtx) => {
-    const { defineTool } = await import('@deepseek-ai/dsh-tools');
     if (lifetime.signal.aborted) return;
-    registerRenameTool(toolCtx, defineTool, async (session, signal) => {
+    registerRenameTool(toolCtx, async (session, signal) => {
       const id = String(session.id);
       forcedRefreshes.add(id);
       try { return await ctx.sessionTitle.refresh(session, signal); }

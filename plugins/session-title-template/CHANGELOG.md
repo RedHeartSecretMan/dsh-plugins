@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Register the rename and refresh tools with plain JSON Schema instead of importing `@deepseek-ai/dsh-tools` at runtime. This fixes linked/profile installs where the plugin directory cannot resolve the Harness SDK and the whole plugin fiber fails with `Cannot find package '@deepseek-ai/dsh-tools'`.
+
 ## 0.1.2 — 2026-11-06
 
 - Add adaptive automatic refresh: short acknowledgements and follow-ups skip model calls; explicit topic shifts, low lexical overlap, provisional titles and a periodic audit trigger evaluation.

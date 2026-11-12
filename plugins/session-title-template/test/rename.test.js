@@ -13,7 +13,7 @@ function fixture(persisted = true) {
       rename(value, text) { assert.equal(value, session); writes++; return title = { title: text.trim(), source: { kind: 'user' }, eventSeq: writes }; },
     },
   };
-  registerRenameTool(ctx, definition => definition);
+  registerRenameTool(ctx);
   return { ctx, tool, session, exec: { agent: { session }, signal: new AbortController().signal }, get writes() { return writes; }, get flushes() { return flushes; } };
 }
 
@@ -22,7 +22,8 @@ test('rename targets only the owning live session and returns the accepted pinne
   const result = await f.tool.execute({ title: '  [1019][探索] Codex 降智路由核查  ' }, f.exec);
   assert.deepEqual(result, { title: '[1019][探索] Codex 降智路由核查', persisted: true });
   assert.equal(f.writes, 1); assert.equal(f.flushes, 1);
-  assert.deepEqual(Object.keys(f.tool.parameters), ['title']);
+  assert.deepEqual(Object.keys(f.tool.parameters.properties), ['title']);
+  assert.deepEqual(f.tool.parameters.required, ['title']);
   assert.equal(f.tool.isConcurrencySafe, undefined);
 });
 test('rename refuses non-agent, stale session, blank title and forged target', async () => {
@@ -50,7 +51,7 @@ test('refresh is caller-owned and confirms persistence of the regenerated snapsh
   const f = fixture(); const registered = new Map();
   f.ctx.tools.register = tool => registered.set(tool.name, tool);
   const accepted = { title: 'generated', source: { kind: 'provider' }, eventSeq: 12 };
-  registerRenameTool(f.ctx, value => value, async (session, signal) => {
+  registerRenameTool(f.ctx, async (session, signal) => {
     assert.equal(session, f.session); assert.equal(signal, f.exec.signal);
     f.ctx.sessionTitle.get = () => accepted;
     return accepted;
@@ -64,7 +65,7 @@ test('refresh is caller-owned and confirms persistence of the regenerated snapsh
 test('refresh with no eligible input cannot claim success', async () => {
   const f = fixture(); let refreshTool;
   f.ctx.tools.register = value => { if (value.name === 'refresh_current_session_title') refreshTool = value; };
-  registerRenameTool(f.ctx, value => value, async () => undefined);
+  registerRenameTool(f.ctx, async () => undefined);
   await assert.rejects(refreshTool.execute({}, f.exec), /No eligible/);
   assert.equal(f.flushes, 0);
 });
