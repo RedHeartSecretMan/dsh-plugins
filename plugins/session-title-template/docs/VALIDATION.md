@@ -1,6 +1,6 @@
 # session-title-template 验证范围与行为边界
 
-当前发布：`0.1.2`。验证环境包括已安装的 DSH `0.2.1-rc.3` 与 `0.2.2-rc.1` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.1.2](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz)。
+当前发布：`0.1.2`。验证环境包括已安装的 DSH `0.2.1-rc.3`、`0.2.2-rc.1` 与 `0.2.2-rc.2` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.1.2](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz)。
 
 ## 已验证的契约
 

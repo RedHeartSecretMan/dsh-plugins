@@ -6,7 +6,7 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 ## Install
 
-Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3` and `0.2.2-rc.1` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
+Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3`, `0.2.2-rc.1` and `0.2.2-rc.2` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
 The package is `@redheartsecretman/session-title-template`, version `0.1.2`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz) through the plugin manager (`install_bundle`) or the CLI:
 

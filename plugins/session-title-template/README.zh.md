@@ -12,7 +12,7 @@
 
 ## 安装和兼容性
 
-需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3` 与 `0.2.2-rc.1` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
+需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3`、`0.2.2-rc.1` 与 `0.2.2-rc.2` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
 包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.1.2`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz)，或使用 CLI：
 
