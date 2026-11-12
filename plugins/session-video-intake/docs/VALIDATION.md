@@ -1,6 +1,6 @@
 # session-video-intake 验证范围与行为边界
 
-当前发布：`0.1.2`。验证环境包括安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5` 与 `0.2.2-rc.1`、pi-ai `1.1.0`、FFmpeg `9.0.2`，以及应用运行时 Node `24.21.0`。当前安装包为 [session-video-intake 0.1.2](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz)。
+当前发布：`0.1.2`。验证环境包括安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5`、`0.2.2-rc.1` 与 `0.2.2-rc.2`、pi-ai `1.1.0`、FFmpeg `9.0.2`，以及应用运行时 Node `24.21.0`。当前安装包为 [session-video-intake 0.1.2](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz)。
 
 ## 已验证的契约
 
@@ -24,7 +24,7 @@
 | 卸载与生命周期 | 钩子按 adapter 拓扑重挂；卸载恢复原始 `streamSimple`；agent hook 随 agent 创建/销毁安装与移除 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-video-intake`，插件 id 与包名一致；显示名称由 locale 提供为“会话视频输入”；发布包包含 icon、locale、NOTICE、第三方许可说明和运行脚本 |
 
-单元与回归测试共 133 项，运行 `npm test` 获取当前结果；`npm run check` 对全部入口和脚本执行语法检查。
+单元与回归测试共 134 项，运行 `npm test` 获取当前结果；`npm run check` 对全部入口和脚本执行语法检查。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 Harness。它通过应用自带运行时加载 ASAR 内 SDK，挂载真实的 `LlmRuntime`、`pi-ai` 适配器与本地附件存储；模型网关是本地 HTTP/SSE 替身，因此不验证外部模型的实时网络、凭据或配额。storyboard 使用真实 FFmpeg/FFprobe，缺失时跳过该段。该检查显式固定 `videoRoutes`，所以不触发目录探测；探测行为由 `test/catalog.test.js` 注入 `fetch` 覆盖。
 

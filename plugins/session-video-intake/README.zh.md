@@ -16,7 +16,7 @@
 
 ## 安装和兼容性
 
-需要 Node.js 22 或更新版本；storyboard 回退需要可用的 FFmpeg/FFprobe。已有能力匹配的本地构建会直接复用；只有所有本地候选都不具备分镜能力时，才下载固定版本的 LGPL managed FFmpeg/FFprobe。已在安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5` 与 `0.2.2-rc.1` 上验证，声明支持 `>=0.2.1-rc.3 <0.6.0`。
+需要 Node.js 22 或更新版本；storyboard 回退需要可用的 FFmpeg/FFprobe。已有能力匹配的本地构建会直接复用；只有所有本地候选都不具备分镜能力时，才下载固定版本的 LGPL managed FFmpeg/FFprobe。已在安装版 DSH `0.2.1-rc.3`、`0.2.1-rc.5`、`0.2.2-rc.1` 与 `0.2.2-rc.2` 上验证，声明支持 `>=0.2.1-rc.3 <0.6.0`。
 
 包名为 `@redheartsecretman/session-video-intake`，当前版本为 `0.1.2`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz)，或使用 CLI：
 

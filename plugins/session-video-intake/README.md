@@ -16,7 +16,7 @@ Deciding "native video" needs extra information: DSH model metadata only has `te
 
 ## Install
 
-Requires Node.js 22+. The storyboard fallback needs a capable FFmpeg/FFprobe; an existing capable build is reused, and a pinned LGPL managed pair is downloaded only when the capability probe rejects every local candidate. Verified against the installed DSH `0.2.1-rc.3`, `0.2.1-rc.5` and `0.2.2-rc.1`; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
+Requires Node.js 22+. The storyboard fallback needs a capable FFmpeg/FFprobe; an existing capable build is reused, and a pinned LGPL managed pair is downloaded only when the capability probe rejects every local candidate. Verified against the installed DSH `0.2.1-rc.3`, `0.2.1-rc.5`, `0.2.2-rc.1` and `0.2.2-rc.2`; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
 The package is `@redheartsecretman/session-video-intake`, version `0.1.2`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-video-intake-v0.1.2/session-video-intake-0.1.2.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
