@@ -1,6 +1,6 @@
 # session-video-intake
 
-English | [中文](README.zh.md) · [Catalog](../../README.md)
+English | [简体中文](README.zh-CN.md) · [Catalog](../../README.md)
 
 The plugin decides how to hand a video to the model you already selected:
 

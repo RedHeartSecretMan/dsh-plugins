@@ -1,6 +1,6 @@
 # session-title-template
 
-[English](README.md) | 中文 · [插件目录](../../README.zh.md)
+[English](README.md) | 简体中文 · [插件目录](../../README.zh-CN.md)
 
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 生成 `[日期][类型] 主题` 格式的标题。日期取自会话创建时间；类型、模板、时区和提示词语言都可配置。提供仅针对当前会话的改名和重新生成工具。
 

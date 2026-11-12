@@ -1,6 +1,6 @@
 # session-video-intake
 
-[English](README.md) | 中文 · [插件目录](../../README.zh.md)
+[English](README.md) | 简体中文 · [插件目录](../../README.zh-CN.md)
 
 插件按你**当前选中的模型**决定视频怎么交给它：
 

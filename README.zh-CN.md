@@ -1,6 +1,6 @@
 # dsh-plugins
 
-[English](README.md) | 中文
+[English](README.md) | 简体中文
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件集合。每个插件都是可独立安装的 bundle，放在 [`plugins/`](plugins/) 下各自的目录里，彼此不依赖。
 

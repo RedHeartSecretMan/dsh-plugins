@@ -1,6 +1,6 @@
 # session-title-template
 
-English | [中文](README.zh.md) · [Catalog](../../README.md)
+English | [简体中文](README.zh-CN.md) · [Catalog](../../README.md)
 
 A configurable `[date][type] topic` title provider for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Dates come from session creation timestamps; the type vocabulary, template, time zone and prompt language are configurable. Two current-session tools support explicit rename and regeneration.
 

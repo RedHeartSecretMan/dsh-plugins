@@ -1,6 +1,6 @@
 # dsh-plugins
 
-English | [中文](README.zh.md)
+English | [简体中文](README.zh-CN.md)
 
 Plugins for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Each one is an installable bundle that lives in its own directory under [`plugins/`](plugins/) and works independently of the others.
 
