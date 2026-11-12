@@ -37,7 +37,7 @@ npm test
 
 # 2. 只改这个插件的版本
 #    package.json: version
-#    README.md / README.zh.md: 安装版本与资产链接
+#    README.md / README.zh-CN.md: 安装版本与资产链接
 #    docs/VALIDATION.md: 当前发布版本
 #    CHANGELOG.md: 顶部新增一条
 cd ../..

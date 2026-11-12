@@ -51,7 +51,7 @@ for (const plugin of plugins) {
       }
     }
   }
-  for (const relative of ['README.md', 'README.zh.md', 'docs/VALIDATION.md']) {
+  for (const relative of ['README.md', 'README.zh-CN.md', 'docs/VALIDATION.md']) {
     const file = join(root, 'plugins', plugin, relative);
     const text = readFileSync(file, 'utf8');
     if (!text.includes(`${plugin}-v${version}/${plugin}-${version}.tgz`)) {
