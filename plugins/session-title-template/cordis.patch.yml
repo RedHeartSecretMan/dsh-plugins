@@ -18,7 +18,7 @@
         language: zh
         cjkSpacing: true
         topicMinChars: 8
-        topicMaxChars: 18
+        topicMaxChars: 20
         fallbackType: 探索
         maxOutputTokens: 4096
         timeoutMs: 60000

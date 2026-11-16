@@ -14,10 +14,10 @@
 
 需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3`、`0.2.2-rc.1` 与 `0.2.2-rc.2` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
-包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.1.2`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.1.3`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz
 ```
 
 也可以从仓库目录安装：
@@ -45,7 +45,7 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 | `fallbackType` | `探索` | 无可用路由时的本地回退类型，必须在词表内 |
 | `cjkSpacing` | `true` | 中文与相邻英文字母、数字之间补空格 |
 | `topicMinChars` | `8` | 提示词目标下限；不为凑长度拒绝简短有效主题 |
-| `topicMaxChars` | `18` | 按 Unicode 码点安全截断主题 |
+| `topicMaxChars` | `20` | 按中文等效字宽（ASCII 计 0.5、空格计 0）及分词/分句边界安全截断主题 |
 | `provider` / `model` | 未设置 | 必须同时填写，否则跟随会话路由 |
 | `maxInputBytes` | `4096` | **最终 JSON 框架文本**的 UTF-8 字节上限，含转义和包装 |
 | `maxOutputTokens` | `4096` | 请求输出上限；选择模型支持的最低推理档位；上限包含隐藏推理 token，标题字数另行校验 |

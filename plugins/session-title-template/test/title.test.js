@@ -11,9 +11,11 @@ import {
   frameMessages,
   isFormattedTitle,
   isSettledTitle,
+  measureTopicWidth,
   parseModelTitle,
   renderTitle,
   selectContextMessages,
+  truncateTopic,
 } from "../lib/title.js";
 import { DEFAULTS, resolveConfig } from "../lib/config.js";
 
@@ -125,6 +127,73 @@ describe("parseModelTitle", () => {
   it("truncates an over-long topic to the configured limit", () => {
     const long = "一".repeat(60);
     assert.equal(parseModelTitle(`[1025][修复] ${long}`, options()).topic.length, config.topicMaxChars);
+  });
+
+  it("keeps mixed CJK and English topics complete using visual width and free CJK spacing", () => {
+    assert.equal(measureTopicWidth("open-code-review 支持 Bitbucket CI"), 15.5);
+    assert.equal(measureTopicWidth("Clash 节点检测与 CI 文档优化"), 12.5);
+    assert.equal(
+      parseModelTitle("[1116][探索] open-code-review 支持 Bitbucket CI", options("1116"))?.title,
+      "[1116][探索] open-code-review 支持 Bitbucket CI"
+    );
+    assert.equal(
+      parseModelTitle("[1104][优化] Clash节点检测与CI文档优化", options("1104"))?.title,
+      "[1104][优化] Clash 节点检测与 CI 文档优化"
+    );
+    assert.equal(
+      isFormattedTitle("[1116][探索] open-code-review 支持 Bitbucket CI", options("1116")),
+      true
+    );
+  });
+
+  it("truncates over-long topics on word and clause boundaries without splitting tokens", () => {
+    assert.equal(
+      parseModelTitle("[1116][修复] 修复 @deepseek-ai/dsh-agent-instructions 在 link 模式下的导入失败问题", options("1116"))?.title,
+      "[1116][修复] 修复 @deepseek-ai/dsh-agent-instructions"
+    );
+    assert.equal(
+      parseModelTitle("[1116][优化] 优化工作区目录结构调整后的历史会话索引同步机制", options("1116"))?.title,
+      "[1116][优化] 优化工作区目录结构调整后的历史会话索引"
+    );
+    assert.equal(
+      truncateTopic("优化工作区目录结构调整后的历史会话索引同步机制", 18),
+      "优化工作区目录结构调整后的历史会话"
+    );
+    assert.equal(
+      parseModelTitle("[1116][探索] 分析当前会话标题命名插件的实现与截断问题修复方案", options("1116"))?.title,
+      "[1116][探索] 分析当前会话标题命名插件的实现"
+    );
+    assert.equal(
+      parseModelTitle("[1116][优化] 梳理仓库标签归属并统一目录命名与会话投影缓存迁移脚本", options("1116"))?.title,
+      "[1116][优化] 梳理仓库标签归属并统一目录命名"
+    );
+    assert.equal(
+      parseModelTitle("[1116][修复] 排查网关超时与修复 @redheartsecretman/session-title-template 截断", options("1116"))?.title,
+      "[1116][修复] 排查网关超时"
+    );
+  });
+
+  it("never mistakes a compound word for a conjunction or a dangling tail", () => {
+    // `合并`, `涉及`, `并发`, `校验和`, `重定向`, `存在` each contain a character that
+    // is also a coordinating separator; only whole-token matches may trigger a
+    // clause fallback or a tail strip.
+    assert.equal(truncateTopic("修复并合并配置项的重命名逻辑与回退策略", 14), "修复并合并配置项的重命名逻辑");
+    assert.equal(truncateTopic("排查涉及并发合并的缓存校验和逻辑与重定向配置问题", 16), "排查涉及并发合并的缓存校验和逻辑");
+    assert.equal(truncateTopic("排查存在重定向与合并冲突的配置项", 12), "排查存在重定向");
+    for (const topic of ["修复并合并配置项的重命名逻辑", "排查涉及并发合并的缓存校验和逻辑", "排查存在重定向"]) {
+      assert.doesNotMatch(topic, /[\s\-/_:]$/u);
+      assert.ok(topic.endsWith("逻辑") || topic.endsWith("重定向"), topic);
+    }
+  });
+
+  it("keeps one whole token instead of splitting it when only a bare particle fits", () => {
+    // A wider-than-budget token may be sliced only when no whole token fits.
+    assert.equal(
+      truncateTopic("在 @deepseek-ai/dsh-agent-instructions 环境下部署", 18),
+      "@deepseek-ai/dsh-agent-instructions"
+    );
+    assert.equal(truncateTopic("对 @deepseek-ai/dsh-agent-instructions 的导入失败问题", 16).length, 32);
+    assert.equal(truncateTopic("@deepseek-ai/dsh-agent-instructions", 10), "@deepseek-ai/dsh-age");
   });
 
   it("honours an English template", () => {
@@ -301,6 +370,16 @@ describe("buildSystemPrompt", () => {
     });
     assert.ok(prompt.includes("属于排障纠错"));
     assert.ok(prompt.includes("多轮对话"));
+  });
+
+  it("states the width unit and the word-completeness rule in both prompt languages", () => {
+    for (const language of ["zh", "en"]) {
+      const prompt = buildSystemPrompt({
+        ...config, language, dateLabel: "1025", typeLabel: "修复", topicLabel: "主题", isRefining: false,
+      });
+      assert.ok(prompt.includes("0.5"), language);
+      assert.match(prompt, language === "en" ? /keep every word and phrase complete/iu : /语义与词语必须完整/u, language);
+    }
   });
 });
 

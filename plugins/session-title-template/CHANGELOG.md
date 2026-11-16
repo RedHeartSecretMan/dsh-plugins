@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 — 2026-11-16
 
+- Stop cutting titles mid-word: `topicMaxChars` now measures CJK-equivalent width (Han 1, ASCII 0.5, CJK spacing 0) and truncates on whole tokens, so mixed CJK/English topics such as `open-code-review 支持 Bitbucket CI` survive intact. Default moves from `18` to `20`.
+- Truncation keeps a complete clause: when a parallel clause would lose its object, the title falls back to the completed first clause instead of ending on `与修复`, and a leftover connector such as a trailing `与` or `-` is removed. Conjunction detection compares whole segmented tokens, so `合并`, `涉及`, `并发`, `校验和`, and `重定向` are never mistaken for separators.
+- An atomic token (scoped package name or ASCII identifier) is split only when that single token exceeds the whole budget.
+- Both prompt languages now state the width unit and forbid cutting a word short or stitching unrelated tasks together.
 - Register the rename and refresh tools with plain JSON Schema instead of importing `@deepseek-ai/dsh-tools` at runtime. This fixes linked/profile installs where the plugin directory cannot resolve the Harness SDK and the whole plugin fiber fails with `Cannot find package '@deepseek-ai/dsh-tools'`.
+- 191 tests.
 
 ## 0.1.2 — 2026-11-06
 

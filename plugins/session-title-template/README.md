@@ -8,10 +8,10 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3`, `0.2.2-rc.1` and `0.2.2-rc.2` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-title-template`, version `0.1.2`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-title-template`, version `0.1.3`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.2/session-title-template-0.1.2.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz
 ```
 
 To install from a checkout instead:
@@ -39,7 +39,7 @@ Override `id: session-title-template` in your profile's user patch. The whole `c
 | `fallbackType` | `探索` | Local fallback type when no route is available; must exist in the vocabulary |
 | `cjkSpacing` | `true` | Space between Han text and adjacent Latin letters/digits |
 | `topicMinChars` | `8` | Prompt guidance; a useful short topic is not rejected just to reach this target |
-| `topicMaxChars` | `18` | Unicode code-point limit for the topic |
+| `topicMaxChars` | `20` | CJK-equivalent width limit for the topic (ASCII = 0.5, spaces = 0), truncated on word/clause boundaries |
 | `provider` / `model` | unset | Supply both or neither; otherwise use the session route |
 | `maxInputBytes` | `4096` | Final framed JSON UTF-8 byte budget, including escaping and wrapper text |
 | `maxOutputTokens` | `4096` | Output cap; uses the lowest supported reasoning effort; the cap includes hidden reasoning, while topic length is validated separately |

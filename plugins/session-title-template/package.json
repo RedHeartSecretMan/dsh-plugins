@@ -1,6 +1,6 @@
 {
   "name": "@redheartsecretman/session-title-template",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Template-shaped session titles for DeepSeek Harness: a fixed [date][type] topic format with a controlled type vocabulary, CJK spacing, and optional backfill.",
   "keywords": [
     "dsh",

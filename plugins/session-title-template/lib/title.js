@@ -226,11 +226,192 @@ function truncateCharacters(value, limit) {
   return Array.from(value).slice(0, limit).join("");
 }
 
+const WORD_SEGMENTER = new Intl.Segmenter("zh", { granularity: "word" });
+
+/** Scoped package names (`@scope/pkg`) or contiguous ASCII identifiers (`open-code-review`). */
+const ASCII_TOKEN = /(?:@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)/gu;
+
+/** Common two/three-character engineering terms kept whole even when ICU splits them. */
+const TECH_TERMS = /重命名|持久化|状态机|工作区|重定向|校验和|排查|网关|超时|文档|优化|缓存|插件|路由|配置|适配|构建|降级|回退|兜底|并发|异步|阻塞|死锁|泄漏|越界|截断|索引|同步|机制/gu;
+
+/**
+ * Whole-token coordinating separators. Matching compares a segmented token with
+ * one of these, so a compound word containing the same character (`合并`,
+ * `并发`, `涉及`) is never mistaken for a conjunction.
+ */
+const CLAUSE_SEPARATOR_TOKENS = new Set(["与", "和", "及", "并", "以及", "同时", "，", "、", "；", ",", ";"]);
+
+/**
+ * Whole-token connectors and particles that leave a sentence unfinished when
+ * they end a truncated topic. Only an exact token match is stripped, so
+ * segmented words such as `存在`, `比对`, and `定向` stay intact.
+ */
+const DANGLING_TOKENS = new Set(["与", "和", "及", "或", "并", "的", "之", "在", "对", "把", "将", "向", "从"]);
+
+/** Bare connector punctuation, such as a trailing `-` or `:` left by a cut. */
+const CONNECTOR_PUNCTUATION = /^[-/_:]+$/u;
+
+/** Half-width ASCII counts as 0.5 CJK width; full-width / Han characters count as 1. */
+function charWeight(character) {
+  return character.codePointAt(0) <= 0x00ff ? 0.5 : 1;
+}
+
+function pushSegmentedUnits(slice, units) {
+  for (const { segment } of WORD_SEGMENTER.segment(slice)) {
+    if (/^\s+$/u.test(segment)) {
+      units.push({ text: segment, weight: 0 });
+    } else {
+      const chars = Array.from(segment);
+      const weight = chars.reduce((sum, ch) => sum + charWeight(ch), 0);
+      units.push({ text: segment, weight });
+    }
+  }
+}
+
+function pushCjkUnits(slice, units) {
+  let last = 0;
+  for (const match of slice.matchAll(TECH_TERMS)) {
+    if (match.index > last) pushSegmentedUnits(slice.slice(last, match.index), units);
+    const term = match[0];
+    units.push({ text: term, weight: Array.from(term).length });
+    last = match.index + term.length;
+  }
+  if (last < slice.length) pushSegmentedUnits(slice.slice(last), units);
+}
+
+/** Split topic text into atomic ASCII identifiers and segmented CJK words. */
+function tokenizeTopicUnits(text) {
+  const units = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(ASCII_TOKEN)) {
+    if (match.index > lastIndex) pushCjkUnits(text.slice(lastIndex, match.index), units);
+    const token = match[0];
+    units.push({ text: token, weight: Array.from(token).length * 0.5 });
+    lastIndex = match.index + token.length;
+  }
+  if (lastIndex < text.length) pushCjkUnits(text.slice(lastIndex), units);
+  return units;
+}
+
+/** Sum one unit sequence's CJK-equivalent width. */
+function measureUnits(units) {
+  return units.reduce((sum, unit) => sum + unit.weight, 0);
+}
+
+/**
+ * Measure topic length in CJK-equivalent width units (Han = 1, ASCII = 0.5, spaces = 0).
+ *
+ * @param value - Topic text.
+ * @returns Effective visual width in CJK character units.
+ */
+export function measureTopicWidth(value) {
+  if (!value) return 0;
+  return measureUnits(tokenizeTopicUnits(String(value)));
+}
+
+/** Drop the empty units a cut can leave at the end of a token sequence. */
+function trimTrailingWhiteSpace(units) {
+  let end = units.length;
+  while (end > 0 && units[end - 1].weight === 0) end--;
+  return units.slice(0, end);
+}
+
+/** Report whether one unit is a connector that must not end a truncated topic. */
+function isDanglingUnit(unit) {
+  return DANGLING_TOKENS.has(unit.text) || CONNECTOR_PUNCTUATION.test(unit.text);
+}
+
+/** Slice inside one token. Only called when that single token exceeds the whole budget. */
+function sliceByWeight(value, limit) {
+  let output = "";
+  let used = 0;
+  for (const ch of Array.from(value)) {
+    const weight = /\s/u.test(ch) ? 0 : charWeight(ch);
+    if (used + weight > limit) break;
+    output += ch;
+    used += weight;
+  }
+  return output.trim();
+}
+
+/**
+ * Truncate a topic to a CJK-equivalent width budget without splitting words and
+ * without leaving an unfinished trailing clause.
+ *
+ * A token is never split merely to fill the budget; the only split is a single
+ * token that by itself exceeds the whole budget, where no whole token can fit.
+ *
+ * @param value - Cleaned and spaced topic text.
+ * @param limit - Maximum CJK-equivalent width (`topicMaxChars`).
+ * @returns The truncated topic.
+ */
+export function truncateTopic(value, limit) {
+  if (!value || !(limit > 0)) return value;
+  const units = tokenizeTopicUnits(value);
+  if (measureUnits(units) <= limit) return value;
+
+  const kept = [];
+  let used = 0;
+  let stopIndex = units.length;
+  for (let index = 0; index < units.length; index += 1) {
+    const unit = units[index];
+    if (used + unit.weight > limit) {
+      stopIndex = index;
+      break;
+    }
+    kept.push(unit);
+    used += unit.weight;
+  }
+
+  const minKeep = Math.min(2, limit);
+  const lastKept = trimTrailingWhiteSpace(kept).at(-1);
+  if (kept.length === 0) {
+    // No whole token fits, so slicing this single token is the only option.
+    const first = units.find((unit) => unit.weight > 0);
+    const partial = first === undefined ? "" : sliceByWeight(first.text, limit);
+    if (partial) kept.push({ text: partial, weight: measureTopicWidth(partial) });
+  } else if (measureUnits(kept) < minKeep && lastKept !== undefined && isDanglingUnit(lastKept)) {
+    // A lone particle such as `在` says nothing; the next whole token is more useful.
+    const next = units[stopIndex];
+    if (next !== undefined && next.weight > 0) {
+      kept.length = 0;
+      if (next.weight <= limit) kept.push(next);
+      else {
+        const partial = sliceByWeight(next.text, limit);
+        if (partial) kept.push({ text: partial, weight: measureTopicWidth(partial) });
+      }
+    }
+  }
+
+  // If truncation cut into a second parallel clause, fall back to the completed
+  // first clause instead of keeping a phrase whose object is missing.
+  let result = trimTrailingWhiteSpace(kept);
+  const minClauseWidth = Math.min(6, Math.max(2, Math.floor(limit * 0.4)));
+  let completedPrefix;
+  for (let index = 0; index < result.length; index += 1) {
+    if (!CLAUSE_SEPARATOR_TOKENS.has(result[index].text)) continue;
+    const prefix = trimTrailingWhiteSpace(result.slice(0, index));
+    const suffix = trimTrailingWhiteSpace(result.slice(index + 1));
+    if (measureUnits(prefix) >= minClauseWidth && measureUnits(suffix) <= 6) completedPrefix = prefix;
+  }
+  if (completedPrefix) result = completedPrefix;
+
+  // A conjunction or particle left at the very end means the next word was cut
+  // away; drop it as long as a usable topic remains.
+  while (result.length > 1 && isDanglingUnit(result.at(-1))) {
+    const candidate = trimTrailingWhiteSpace(result.slice(0, -1));
+    if (candidate.length === 0 || measureUnits(candidate) < minKeep) break;
+    result = candidate;
+  }
+
+  return trimTrailingWhiteSpace(result).map((unit) => unit.text).join("").trim();
+}
+
 /** Normalize model topic text. topicMinChars is prompt guidance, not a rejection rule. */
 function normalizeTopic(value, options) {
   let topic = cleanTitleText(value).replace(TRAILING_PUNCTUATION, "");
   if (options.cjkSpacing) topic = formatCjkSpacing(topic);
-  if (options.topicMaxChars > 0) topic = truncateCharacters(topic, options.topicMaxChars).trim();
+  if (options.topicMaxChars > 0) topic = truncateTopic(topic, options.topicMaxChars).trim();
   return topic;
 }
 
@@ -322,8 +503,8 @@ export function buildFallbackTitle(options) {
   const { date, template, fallbackType, sourceText, cjkSpacing, topicMaxChars } = options;
   let topic = cleanTitleText(sourceText).replace(TRAILING_PUNCTUATION, "");
   if (cjkSpacing) topic = formatCjkSpacing(topic);
-  const limit = topicMaxChars > 0 ? topicMaxChars : 18;
-  topic = truncateCharacters(topic, limit).trim();
+  const limit = topicMaxChars > 0 ? topicMaxChars : 20;
+  topic = truncateTopic(topic, limit).trim();
   return renderTitle(template, { date, type: fallbackType, topic: topic || fallbackType });
 }
 
@@ -453,7 +634,7 @@ export function buildSystemPrompt(options) {
       "Strict requirements:",
       `1. Use the date ${dateLabel} exactly where the example places it;`,
       "2. The type must be exactly one of the listed values; preserve the example's punctuation and field order;",
-      `3. The topic must be ${topicMinChars}-${topicMaxChars} characters, name the core subject or goal, and end without punctuation;`,
+      `3. The topic must be ${topicMinChars}-${topicMaxChars} width units (Han = 1, Latin letter or digit = 0.5), name the core subject or goal, keep every word and phrase complete (never cut a word short or stitch unrelated older tasks together with "and"), and end without punctuation;`,
       cjkSpacing
         ? "4. Put exactly one half-width space between CJK text and adjacent Latin letters or digits;"
         : "4. Preserve normal word spacing; no automatic spacing at CJK boundaries is required;",
@@ -465,7 +646,7 @@ export function buildSystemPrompt(options) {
       "严格要求：",
       `1. 日期必须为 ${dateLabel}，位置严格遵循示例；`,
       "2. 类型必须是上述选项之一，保留示例中的标点和字段顺序；",
-      `3. 主题需高度凝练核心问题或目标，控制在 ${topicMinChars}-${topicMaxChars} 个字符，末尾不加标点；`,
+      `3. 主题需高度凝练核心问题或目标，控制在 ${topicMinChars}-${topicMaxChars} 个字宽（汉字计 1，字母数字计 0.5），语义与词语必须完整（严禁截断词语或用“与/及”硬拼多个无关旧任务），末尾不加标点；`,
       cjkSpacing
         ? "4. 中文与相邻英文/数字之间保留一个半角空格；"
         : "4. 保留词语之间必要的空格，不要求自动调整中英文边界空格；",

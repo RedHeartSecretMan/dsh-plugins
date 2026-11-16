@@ -24,7 +24,7 @@ export const DEFAULTS = {
   language: "zh",
   cjkSpacing: true,
   topicMinChars: 8,
-  topicMaxChars: 18,
+  topicMaxChars: 20,
   fallbackType: "探索",
   types: DEFAULT_TYPES,
   provider: undefined,
