@@ -407,8 +407,13 @@ export function truncateTopic(value, limit) {
   return trimTrailingWhiteSpace(result).map((unit) => unit.text).join("").trim();
 }
 
-/** Normalize model topic text. topicMinChars is prompt guidance, not a rejection rule. */
-function normalizeTopic(value, options) {
+/**
+ * Normalize topic text. topicMinChars is prompt guidance, not a rejection rule.
+ *
+ * Shared by model output and delegation labels so both reach the same canonical
+ * shape: no trailing punctuation, configured CJK spacing, bounded length.
+ */
+export function normalizeTopic(value, options) {
   let topic = cleanTitleText(value).replace(TRAILING_PUNCTUATION, "");
   if (options.cjkSpacing) topic = formatCjkSpacing(topic);
   if (options.topicMaxChars > 0) topic = truncateTopic(topic, options.topicMaxChars).trim();

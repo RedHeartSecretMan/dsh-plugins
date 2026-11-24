@@ -49,14 +49,17 @@ function describeSupplemental(guidance) {
 }
 
 /**
- * Pick the newest failure record so a status view explains the last incident.
+ * Pick the newest failure record for one session so the status view explains the
+ * last incident without borrowing another session's trouble. Records without a
+ * session id cannot be attributed and are ignored.
  *
  * @param records - Structured diagnostics, oldest first.
- * @returns Failure description, or null when nothing failed.
+ * @param sessionId - Session the snapshot describes.
+ * @returns Failure description, or null when this session has none.
  */
-function describeLastFailure(records) {
+function describeLastFailure(records, sessionId) {
   const failures = Array.isArray(records)
-    ? records.filter(record => record?.kind === 'title-call-failed')
+    ? records.filter(record => record?.kind === 'title-call-failed' && record.sessionId === sessionId)
     : [];
   const latest = failures.at(-1);
   if (latest === undefined) return null;
@@ -79,7 +82,7 @@ function describeLastFailure(records) {
  * @param input.records - Structured diagnostics for this session.
  * @returns Snapshot separating built-in rules, supplements, title and failures.
  */
-export function describeTitleState({ config, current, guidance, probe, records } = {}) {
+export function describeTitleState({ config, current, guidance, probe, records, sessionId } = {}) {
   const supplemental = describeSupplemental(guidance);
   return {
     builtin: {
@@ -95,7 +98,7 @@ export function describeTitleState({ config, current, guidance, probe, records }
     supplemental: { count: supplemental.count, sources: supplemental.sources },
     summary: supplemental.summary,
     title: describeCurrentTitle(current),
-    lastFailure: describeLastFailure(records),
+    lastFailure: describeLastFailure(records, sessionId),
     probe: probe === undefined || probe === null ? null : { verdict: probe.verdict, checkedAt: probe.checkedAt },
   };
 }

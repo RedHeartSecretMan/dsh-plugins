@@ -10,6 +10,7 @@ const config = resolveConfig({});
 function snapshot(overrides = {}) {
   return {
     config,
+    sessionId: 'S1',
     current: {
       title: '[1124][修复] 修复登录超时',
       source: { kind: 'provider', model: { provider: 'p', model: 'm' } },
@@ -58,11 +59,30 @@ test('the current title reports its source and whether it is pinned', () => {
 
 test('a recent failure is surfaced with its category, not raw provider text', () => {
   const state = describeTitleState(snapshot({
-    records: [{ kind: 'title-call-failed', route: 'p/m', attempt: 1, category: 'timeout', at: 1 }],
+    records: [{ kind: 'title-call-failed', route: 'p/m', attempt: 1, category: 'timeout', at: 1, sessionId: 'S1' }],
   }));
   assert.equal(state.lastFailure.category, 'timeout');
   assert.equal(state.lastFailure.route, 'p/m');
   assert.equal(state.lastFailure.raw, undefined, 'no provider payload is exposed');
+});
+
+test('a failure from another session is not reported as this session failure', () => {
+  const state = describeTitleState(snapshot({
+    sessionId: 'B',
+    records: [
+      { kind: 'title-call-failed', category: 'timeout', route: 'p/m', sessionId: 'A', at: 1 },
+      { kind: 'title-call-failed', category: 'input-budget', route: 'p/m', sessionId: 'B', at: 2 },
+    ],
+  }));
+  assert.equal(state.lastFailure.category, 'input-budget', 'only this session counts');
+});
+
+test('with no failure for this session the snapshot reports none', () => {
+  const state = describeTitleState(snapshot({
+    sessionId: 'B',
+    records: [{ kind: 'title-call-failed', category: 'timeout', route: 'p/m', sessionId: 'A', at: 1 }],
+  }));
+  assert.equal(state.lastFailure, null);
 });
 
 test('the probe verdict is reported when one exists', () => {

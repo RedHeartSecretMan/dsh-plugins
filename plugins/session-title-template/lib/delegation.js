@@ -9,6 +9,9 @@
  * @module session-title-template/delegation
  */
 
+/** Session origin marking a real subagent (never a fork of one). */
+const SUBAGENT_ORIGIN = 'subagent';
+
 /** Event type carrying the delegation descriptor. */
 const DESCRIPTOR_EVENT = 'subagent/descriptor';
 
@@ -26,6 +29,10 @@ const DESCRIPTOR_EVENT = 'subagent/descriptor';
 export function readDelegationLabel(session) {
   if (session === null || typeof session !== 'object') return undefined;
   if (typeof session.snapshotEvents !== 'function') return undefined;
+  // A fork replays its ancestor's events as seed, so an inherited descriptor
+  // describes the ancestor, not this session. Only a session whose own origin is
+  // a subagent may take its name from a descriptor.
+  if (session.header?.origin !== SUBAGENT_ORIGIN) return undefined;
   let events;
   try {
     events = session.snapshotEvents();

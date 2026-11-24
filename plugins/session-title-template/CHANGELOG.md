@@ -14,7 +14,12 @@
 - Record diagnostics as structured data. `state.record` appends bounded JSON lines beside the human log, so the status view reads fields instead of parsing log strings. Records are truncated per field, trimmed to a bounded file, and a corrupt line is skipped rather than failing the read.
 - Expose the snapshot through `describe_current_session_title`, a read-only tool that answers the whole status question for the calling session, so the snapshot has a production consumer instead of test-only reachability.
 - Share streamed-output reading between the title call and the role probe, so a provider quirk fixed in one path also protects the other.
-- 248 tests.
+- Scope failure details to the session that produced them. Records carry a `sessionId`, and the status snapshot only reports a failure belonging to the queried session, so one session's timeout no longer explains another's title.
+- Name subagents only from their own descriptor. A fork replays its ancestor's events as seed, so an inherited `subagent/descriptor` describes the ancestor; the label reader now requires the session's own origin to be a subagent, and planning takes that flag instead of inferring it from a label being present.
+- Normalize a delegation label with the same rules as model output, so a label ending in punctuation still yields a canonical title instead of one the parser would reject.
+- Probe every candidate route, not only the primary: a fallback endpoint can drop the instruction block just as the primary can.
+- Write structured records under the same cross-process lock as the human log.
+- 254 tests.
 
 ## 0.1.3 — 2026-11-16
 

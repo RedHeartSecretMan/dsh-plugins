@@ -3,7 +3,8 @@ import { test } from 'node:test';
 
 const { planTitle } = await import('../lib/title-plan.js');
 const { resolveConfig } = await import('../lib/config.js');
-const { compileTitlePattern } = await import('../lib/title.js');
+const { compileTitlePattern, isFormattedTitle } = await import('../lib/title.js');
+const require_isFormatted = { isFormattedTitle };
 
 const config = resolveConfig({});
 const options = {
@@ -60,6 +61,17 @@ test('an existing provider title is kept even for a subagent', () => {
     messages: [{ seq: 1, text: '继续' }],
   }));
   assert.equal(plan.refresh, false);
+});
+
+test('a label with trailing punctuation still produces a canonical title', () => {
+  const plan = planTitle(delegated({ delegationLabel: '修复登录：超时重试。' }));
+  const { isFormattedTitle } = require_isFormatted;
+  assert.equal(isFormattedTitle(plan.delegationTitle, options), true, `not canonical: ${plan.delegationTitle}`);
+});
+
+test('a label mixing CJK and Latin gets the configured spacing', () => {
+  const plan = planTitle(delegated({ delegationLabel: 'review vLLM 的 KV cache 实现' }));
+  assert.match(plan.delegationTitle, /review vLLM 的 KV cache 实现$/u);
 });
 
 test('a label longer than the topic budget is truncated instead of cut mid-word', () => {

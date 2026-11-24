@@ -283,8 +283,12 @@ export function createStateStore({ directory, log }) {
     return enqueue(recordFile, async () => {
       try {
         await mkdir(directory, { recursive: true });
-        await appendFile(recordFile, `${JSON.stringify(normalizeRecord(entry))}\n`, { encoding: "utf8", mode: 0o600 });
-        await truncateRecords(recordFile, RECORD_LIMIT);
+        // Same cross-process guarantee as the human log: concurrent activations
+        // must not interleave a half-written line.
+        await withLock(recordFile, LOG_LOCK_WAIT_MS, undefined, async () => {
+          await appendFile(recordFile, `${JSON.stringify(normalizeRecord(entry))}\n`, { encoding: "utf8", mode: 0o600 });
+          await truncateRecords(recordFile, RECORD_LIMIT);
+        });
       } catch {
         await notify("session-title-template: diagnostic record write failed");
       }

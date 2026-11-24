@@ -10,7 +10,7 @@
  * @module session-title-template/title-plan
  */
 
-import { buildFallbackTitle, isFormattedTitle, isSettledTitle, renderTitle, truncateTopic } from './title.js';
+import { buildFallbackTitle, isFormattedTitle, isSettledTitle, normalizeTopic, renderTitle } from './title.js';
 import { decideTitleRefresh } from './refresh-policy.js';
 
 /**
@@ -64,7 +64,10 @@ function needsRecovery(current, fallback, options) {
  */
 function delegationTitle(label, options) {
   if (typeof label !== 'string') return undefined;
-  const topic = truncateTopic(label.replace(/\s+/gu, ' ').trim(), options.topicMaxChars);
+  // Reuse the same normalization the model path applies, so a label such as
+  // "修复登录：超时重试。" yields a canonical title rather than one the parser
+  // would reject if it ever came back from the model.
+  const topic = normalizeTopic(label, options);
   if (!topic) return undefined;
   return renderTitle(options.template, { date: options.date, type: options.fallbackType, topic });
 }
@@ -98,6 +101,8 @@ export function planTitle(context) {
   });
   // A subagent names itself from the delegation label; every other session falls
   // back to the message-derived title and needs the model for a real title.
+  // Delegation identity is decided by the caller from the session header; a label
+  // alone never implies a subagent, because a fork can carry an inherited one.
   const delegated = context.isSubagent === true ? delegationTitle(context.delegationLabel, options) : undefined;
   return {
     refresh: decision.refresh,

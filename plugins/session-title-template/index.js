@@ -47,6 +47,7 @@ export async function apply(ctx, rawConfig) {
       guidance,
       probe: route === undefined ? undefined : roleProbe.detail(route),
       records: await state.recentRecords(),
+      sessionId: String(session.id),
     });
   };
   await registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId: name, describe: describeSession });
@@ -88,7 +89,10 @@ export async function apply(ctx, rawConfig) {
       };
       // Planning is a pure decision over the snapshot: it owns the refresh policy,
       // the fallback title and the canonical check, so this provider only wires it.
-      const delegationLabel = readDelegationLabel(request.session);
+      // Origin marks a real subagent; the label reader already enforces it, and
+      // planning takes the flag rather than inferring it from a label.
+      const isSubagent = request.session.header?.origin === 'subagent';
+      const delegationLabel = isSubagent ? readDelegationLabel(request.session) : undefined;
       const plan = planTitle({
         messages,
         current,
@@ -98,7 +102,7 @@ export async function apply(ctx, rawConfig) {
         hint: activeRetitles.get(sessionId),
         lastEvaluated: lastEvaluations.get(sessionId),
         delegationLabel,
-        isSubagent: delegationLabel !== undefined,
+        isSubagent,
       });
       if (!plan.refresh) return keepCurrent();
       const { fallback, currentTitle, hint, canonical, targeted: targetedRetitle, delegationTitle } = plan;
@@ -129,11 +133,12 @@ export async function apply(ctx, rawConfig) {
       if (namingGuidance?.unavailable) state.note('agents-instructions-unavailable');
       const system = buildSystemPrompt({ ...config, template: config.template, dateLabel: date, typeLabel: config.types[0].key, topicLabel: config.language === 'en' ? 'Topic' : '主题', isRefining: messages.length > 1, hint, namingGuidance, currentTitle });
       const input = frameMessages(selected, currentTitle);
-      // Observe whether this endpoint can actually receive the instruction block.
-      // The run is detached: it must never delay or fail title generation.
-      void roleProbe.probe(route, request).catch(() => {});
       const routes = [route];
       if (fallbackRoute && (route.provider !== fallbackRoute.provider || route.model !== fallbackRoute.model)) routes.push(fallbackRoute);
+      // Observe every candidate: a fallback endpoint can drop the instruction just as
+      // the primary can, so probing only the primary would describe half the routes.
+      // The runs are detached: they must never delay or fail title generation.
+      for (const candidate of routes) void roleProbe.probe(candidate, request).catch(() => {});
       let failure;
       let abandoned = false;
       // One round tries every configured route once, so a healthy fallback still
@@ -164,7 +169,7 @@ export async function apply(ctx, rawConfig) {
             const routeLabel = `${target.provider}/${target.model}`;
             state.note(`title-call-failed route=${routeLabel} ${detail.text}`);
             // Record the fields directly: no caller has to parse them back out.
-            state.record({ kind: 'title-call-failed', route: routeLabel, attempt, category: detail.category });
+            state.record({ kind: 'title-call-failed', route: routeLabel, attempt, category: detail.category, sessionId });
             if (!isRetryableTitleFailure(error)) { abandoned = true; break; }
           }
         }

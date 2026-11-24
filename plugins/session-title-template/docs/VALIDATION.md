@@ -12,9 +12,9 @@
 | 当前标题稳定性 | currentTitle 始终进入 prompt 与 JSON 输入，带 canonical 标志；模型按稳定性规则原样返回仍准确的标题；仅主任务实质变化时改写；显式 refresh/retitle 优先；同标题返回保留 provenance |
 | 模板与字符 | 占位符恰好一次且可辨识；字段重排、后缀和字面美元文本可往返；截断按中文等效字宽与分词/分句边界计算 |
 | 重试与失败归类 | 每轮按顺序遍历全部候选路由，健康备用路由立即接管；轮间指数退避，`retryAttempts`（1–5）与 `retryDelayMs`（0–10000）有界；输入预算不足属确定性失败只试一次；取消立即中止且不写失败日志 |
-| 子代理命名 | 子代理会话读取自身 `subagent/descriptor` 的 label，渲染为模板标题且不调用模型；label 缺失回落到消息来源；根会话不使用该来源 |
+| 子代理命名 | 仅当会话自身 origin 为 subagent 时读取 `subagent/descriptor` 的 label；fork 种子里继承的 descriptor 被忽略；label 按与模型输出相同的规范化规则渲染；label 缺失回落到消息来源 |
 | 标题状态快照 | 一次查询返回内置规则、补充来源数量与清单、当前标题来源与固定状态、最近失败类别、探针结论；内置与补充分离，不包含 provider 原文 |
-| 角色能力探测 | 每个 provider/model 至多一次成功判定；传输失败最多尝试 3 次后保持未判定；精确 token 匹配判为 supported，答非所问判为 unsupported；超时、取消和传输失败保持未判定；只写诊断日志，不改路由、不改 profile |
+| 角色能力探测 | 每个候选路由（含 fallbackRoute）各探测；每个 provider/model 至多一次成功判定；传输失败最多尝试 3 次后保持未判定；精确 token 匹配判为 supported，答非所问判为 unsupported；超时、取消和传输失败保持未判定；只写诊断日志，不改路由、不改 profile |
 | 失败诊断 | `title-call-failed` 只记录 `route`、`attempt n/总数`、provider 错误码和本地失败类别；不写标题、提示词、响应或原始错误文本 |
 | 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含 currentTitle anchor、转义和包装；优先保留首条和最新消息 |
 | 配置 | 字段、路由成对、词表和占位符校验；拒绝未知字段和已移除的旧别名 `maxExploreRefinements` / 顶层 `retitle`；`agentsInstructions` 仅接受 boolean `enabled` 和 `256` 至 `65536` 整数 `maxBytes`，解析结果独立冻结 |
@@ -29,7 +29,7 @@
 | 状态与卸载 | 结构化诊断写入 `diagnostics.jsonl`（有界、逐字段截断）； 按 profile 隔离；原子写入和有界锁等待；错误后队列可恢复；卸载取消定时器并等待维护退出 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-title-template`，插件 id 与包名一致；显示名称由 locale 提供为“会话标题模板”；发布包包含全部运行资源 |
 
-单元与回归测试共 248 项，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果，`npm run check` 对所有入口和脚本执行语法检查。
+单元与回归测试共 254 项，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果，`npm run check` 对所有入口和脚本执行语法检查。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。使用正式 profile resolver 加载自包含的 linked package，不依赖未声明的 Harness SDK peer。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
 
