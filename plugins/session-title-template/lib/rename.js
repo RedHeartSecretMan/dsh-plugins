@@ -70,3 +70,44 @@ export function registerRenameTool(ctx, refresh) {
     },
   });
 }
+
+/**
+ * Register a read-only tool describing why the current title looks the way it does.
+ *
+ * The status view is for humans and for an agent explaining a title: it reports the
+ * built-in rules, how many `AGENTS.md` supplements contributed, where the current
+ * title came from, and the newest failure category. It never mutates anything.
+ *
+ * @param ctx - Plugin context exposing `tools`, `sessions` and `sessionTitle`.
+ * @param describe - Callback returning the snapshot for the calling session.
+ */
+export function registerDescribeTool(ctx, describe) {
+  ctx.tools.register({
+    name: 'describe_current_session_title',
+    description: 'Describe the current session title: the built-in naming rules, how many AGENTS.md supplements contributed, where the title came from, whether it is pinned, the newest failure category, and the role-probe verdict. Read-only; never changes the title.',
+    parameters: { type: 'object', additionalProperties: false, properties: {} },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: true,
+        properties: {
+          summary: { type: 'string' },
+          title: { type: 'object', additionalProperties: true },
+          supplemental: { type: 'object', additionalProperties: true },
+        },
+        required: ['summary', 'title', 'supplemental'],
+      },
+      render: (_args, value) => [{ type: 'text', text: value.summary }],
+    },
+    async execute(args, exec) {
+      if (args !== undefined && args !== null && Object.keys(args).length > 0) {
+        throw new Error('describe_current_session_title takes no arguments');
+      }
+      const session = exec.agent?.session;
+      if (!session || ctx.sessions.get(session.id) !== session) {
+        throw new Error('describe_current_session_title requires the calling agent’s live session');
+      }
+      exec.signal?.throwIfAborted();
+      return describe(session);
+    },
+  });
+}

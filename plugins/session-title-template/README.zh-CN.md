@@ -120,6 +120,7 @@ Host 在工具服务可用时向所有 agent preset 注册两个默认排他执�
 |---|---|---|
 | `rename_current_session` | `title` | 调用正式 `sessionTitle.rename()`，取消在飞自动生成并固定标题 |
 | `refresh_current_session_title` | 无 | 明确绕过自动稳定性保护，调用正式 `sessionTitle.refresh()` 重新生成；有意解除手动固定 |
+| `describe_current_session_title` | 无 | 只读：返回内置规则、补充来源数量与清单、当前标题来源与固定状态、最近失败类别、探针结论 |
 
 目标只从 `execution.agent.session` 取得，不接受会话 id；拒绝无 agent、非 live session 和多余字段。两个工具都在 flush 成功并读回核对后报告已保存。落盘失败会明确说明内存可能已改变；同一个已固定标题的改名重试不重复写事件。工具走 Harness 正常执行策略，不声明只读或绕过权限。
 
@@ -143,11 +144,12 @@ Host 在工具服务可用时向所有 agent preset 注册两个默认排他执�
 ```text
 $DSH_PROFILE_DIR/state/session-title-template/backfill-state.json
 $DSH_PROFILE_DIR/state/session-title-template/backfill.log
+$DSH_PROFILE_DIR/state/session-title-template/diagnostics.jsonl
 ```
 
 没有该变量时使用 `$DSH_HOME/profiles/$DSH_PROFILE/state/session-title-template/`；连 profile 也未指定时才使用旧的 `$DSH_HOME/session-title-template/`。`DSH_HOME` 默认 `~/.dsh`。
 
-状态文件采用独占锁、原子替换和可恢复写队列；损坏的状态不会被当作空进度覆盖。锁等待有界且不偷锁；进程异常退出留下 `.lock` 时，应确认没有活动写入者后再清理。日志保留最多 512 KiB 和一份同上限备份；日志失败不影响记账。
+`diagnostics.jsonl` 保存结构化诊断记录（标题失败、探针结论），按字段截断并有条数上限。状态文件采用独占锁、原子替换和可恢复写队列；损坏的状态不会被当作空进度覆盖。锁等待有界且不偷锁；进程异常退出留下 `.lock` 时，应确认没有活动写入者后再清理。日志保留最多 512 KiB 和一份同上限备份；日志失败不影响记账。
 
 ## 开发和验证
 

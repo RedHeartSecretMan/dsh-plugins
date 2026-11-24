@@ -81,6 +81,7 @@ try {
   // Registered through the actual tools service and validated there.
   const tool = ctx.tools.get('rename_current_session'); assert.ok(tool);
   const refreshTool = ctx.tools.get('refresh_current_session_title'); assert.ok(refreshTool);
+  const describeTool = ctx.tools.get('describe_current_session_title'); assert.ok(describeTool, 'read-only status tool is registered');
   assert.deepEqual(Object.keys(tool.parameters.properties), ['title']);
   const file = join(home, 'persisted-fixture-events.json');
   ctx.on('session/flush', async value => { if (value === session) await writeFile(file, JSON.stringify(value.snapshotEvents())); });
@@ -108,6 +109,7 @@ try {
   await installed.dispose();
   assert.equal(ctx.tools.get('rename_current_session'), undefined);
   assert.equal(ctx.tools.get('refresh_current_session_title'), undefined);
+  assert.equal(ctx.tools.get('describe_current_session_title'), undefined);
   assert.ok(!(await ctx.systemPrompt.assemble()).sections.some(section => section.name === owner));
   const recoveryPlugin = ctx.plugin(plugin, { topicMaxChars: 64 }); await recoveryPlugin;
   const recovery = ctx.sessions.create('recovery-fixture', { meta: { createdAt: Date.UTC(2026, 9, 24, 17, 30), cwd: original } });

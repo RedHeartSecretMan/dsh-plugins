@@ -1,5 +1,6 @@
 /** Resolve the title route and execute one structured title request. */
 import { randomUUID } from 'node:crypto';
+import { collectStreamText } from './stream-text.js';
 
 /** Pick the route used for a title request without switching the main agent route. */
 export function resolveRoute(config, request, ctx) {
@@ -41,42 +42,22 @@ export async function titleCall({
       titleProvider: providerId, messageSeqs, route, system, messages, maxTokens: config.maxOutputTokens,
       ...(call.config.reasoningEffort === undefined ? {} : { reasoningEffort: call.config.reasoningEffort }),
     });
-    const blocks = new Map();
-    let finish;
-    for await (const chunk of call.stream(options)) {
-      combined.throwIfAborted();
-      const index = chunk.index ?? 0;
-      if (chunk.type === 'finish') { finish = chunk.reason; continue; }
-      if (chunk.type === 'tool-call-delta' || (chunk.type === 'block-start' && chunk.blockType === 'tool-call')) {
-        throw new Error('session-title-template: title response must not contain tool calls');
-      }
-      if (chunk.type === 'block-end') {
-        if (chunk.block.type === 'tool-call') throw new Error('session-title-template: title response contains a tool call');
-        if (!blocks.get(index)?.closed) blocks.set(index, { text: chunk.block.type === 'text' ? chunk.block.text : '', closed: true });
-      } else if (chunk.type === 'text-delta' && !blocks.get(index)?.closed) {
-        blocks.set(index, { text: (blocks.get(index)?.text ?? '') + chunk.text, closed: false });
-      }
-    }
-    combined.throwIfAborted();
-    if (finish?.kind !== 'stop') {
-      const error = new Error(`session-title-template: unsuccessful terminal finish (${finish?.kind ?? 'missing'})`);
-      error.code = finish?.failure?.code ?? 'TITLE_STREAM_FAILED';
-      throw error;
-    }
-    return [...blocks.values()].map(block => block.text).join(' ');
+    return await collectStreamText(call.stream(options), combined, { prefix: 'session-title-template' });
   } finally { clearTimeout(timer); }
 }
 
 /**
- * Classify one failure without writing provider text or model output to logs.
+ * Classify one failure without exposing provider text or credential-bearing detail.
  *
- * Error messages can contain prompt fragments, response bodies or credentials.
- * Diagnostics keep the route, attempt, provider code and a stable local category.
+ * Error messages can contain prompt fragments, response bodies or credentials, so
+ * diagnostics keep the route, attempt, provider code and a stable local category.
+ * The category is returned as a field: callers record it as data instead of
+ * parsing it back out of a formatted line.
  *
  * @param error - rejection or thrown value from a title attempt.
  * @param attempt - 1-based attempt number that failed.
  * @param attempts - configured attempt budget.
- * @returns Text safe to append after the `title-call-failed` label.
+ * @returns Attempt, code, category and the bounded display text for the log.
  */
 export function describeTitleFailure(error, attempt, attempts) {
   const rawCode = typeof error?.code === 'string' && error.code !== ''
@@ -94,7 +75,7 @@ export function describeTitleFailure(error, attempt, attempts) {
           : /terminal finish|stream failed|missing/u.test(message)
             ? 'stream-failure'
             : 'provider-failure';
-  return `attempt ${attempt}/${attempts} ${code}: ${category}`;
+  return { attempt, attempts, code, category, text: `attempt ${attempt}/${attempts} ${code}: ${category}` };
 }
 
 /**

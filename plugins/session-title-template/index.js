@@ -4,9 +4,10 @@ import { resolveConfig } from './lib/config.js';
 import { createStateStore, stateDirectory } from './lib/state.js';
 import { createInstructionReader } from './lib/instructions.js';
 import { backfillTitles } from './lib/backfill.js';
-import { buildFallbackTitle, buildSystemPrompt, compileTitlePattern, formatDate, frameMessages, isFormattedTitle, isSettledTitle, parseModelTitle, selectContextMessages } from './lib/title.js';
+import { buildSystemPrompt, compileTitlePattern, formatDate, frameMessages, parseModelTitle, selectContextMessages } from './lib/title.js';
 import { planTitle } from './lib/title-plan.js';
 import { readDelegationLabel } from './lib/delegation.js';
+import { describeTitleState } from './lib/title-state.js';
 import { resolveRoute, titleCall, describeTitleFailure, isRetryableTitleFailure } from './lib/run.js';
 import { createRoleProbe } from './lib/role-probe.js';
 import { registerCoordination } from './lib/coordination.js';
@@ -33,7 +34,22 @@ export async function apply(ctx, rawConfig) {
     onVerdict: verdict => state.record({ kind: 'role-probe', route: `${verdict.provider}/${verdict.model}`, verdict: verdict.verdict }),
     signal: lifetime.signal,
   });
-  await registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId: name });
+  // One callback answers the whole status question, so the tool stays read-only.
+  const describeSession = async (session) => {
+    const date = formatDate(session.header?.createdAt, config.timezone, config.dateFormat);
+    const guidance = readInstructions
+      ? await readInstructions({ cwd: ctx.get?.('workingDirectory')?.get?.(session) ?? session.header?.cwd, maxBytes: config.agentsInstructions.maxBytes })
+      : undefined;
+    const route = resolveRoute(config, { session }, ctx);
+    return describeTitleState({
+      config,
+      current: ctx.sessionTitle.get(session),
+      guidance,
+      probe: route === undefined ? undefined : roleProbe.detail(route),
+      records: await state.recentRecords(),
+    });
+  };
+  await registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId: name, describe: describeSession });
   // Every field planning needs travels together: the fallback type builds the
   // pre-model title, and parse/format checks need pattern and vocabulary.
   const titleOptions = (date) => ({
@@ -144,15 +160,11 @@ export async function apply(ctx, rawConfig) {
             failure = error;
             // The label alone cannot separate a route failure from an unusable
             // model reply; keep the cause so the next incident is diagnosable.
-            const failureLine = describeTitleFailure(error, attempt, config.retryAttempts);
-            state.note(`title-call-failed route=${target.provider}/${target.model} ${failureLine}`);
-            // Structured twin of the log line: the status view reads fields, not text.
-            state.record({
-              kind: 'title-call-failed',
-              route: `${target.provider}/${target.model}`,
-              attempt,
-              category: failureLine.split(': ').at(-1),
-            });
+            const detail = describeTitleFailure(error, attempt, config.retryAttempts);
+            const routeLabel = `${target.provider}/${target.model}`;
+            state.note(`title-call-failed route=${routeLabel} ${detail.text}`);
+            // Record the fields directly: no caller has to parse them back out.
+            state.record({ kind: 'title-call-failed', route: routeLabel, attempt, category: detail.category });
             if (!isRetryableTitleFailure(error)) { abandoned = true; break; }
           }
         }

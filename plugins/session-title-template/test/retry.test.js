@@ -167,14 +167,14 @@ test('retryAttempts is bounded by configuration', async () => {
 test('failure descriptions stay single-line and bounded', () => {
   const multi = Object.assign(new Error('第一行\n第二行\t tab'), { code: 'E_ONE' });
   const described = describeTitleFailure(multi, 2, 3);
-  assert.doesNotMatch(described, /\n/u);
-  assert.match(described, /attempt 2\/3 E_ONE: provider-failure/u);
-  assert.doesNotMatch(described, /第一行|第二行/u);
+  assert.doesNotMatch(described.text, /\n/u);
+  assert.equal(described.text, 'attempt 2/3 E_ONE: provider-failure');
+  assert.doesNotMatch(described.text, /第一行|第二行/u);
 
   const long = describeTitleFailure(new Error('x'.repeat(400)), 1, 3);
-  assert.ok(long.length < 200);
-  assert.match(long, /provider-failure$/u);
-  assert.doesNotMatch(long, /x{20}/u);
+  assert.ok(long.text.length < 200);
+  assert.match(long.text, /provider-failure$/u);
+  assert.doesNotMatch(long.text, /x{20}/u);
 });
 
 test('only budget failures are classified as non-retryable', () => {
@@ -200,4 +200,14 @@ test('role probing never delays or fails a title, even when the probe reply is w
   const lines = (await diagnostics()).slice(before);
   assert.ok(lines.some(line => /role-probe route=primary\/old-model result=unsupported/u.test(line)), 'probe verdict is recorded');
   assert.equal(lines.filter(line => line.includes('title-call-failed')).length, 0);
+});
+
+test('failure reporting exposes the category as a field, not a parsed suffix', async () => {
+  const { describeTitleFailure } = await import('../lib/run.js');
+  const detail = describeTitleFailure(Object.assign(new Error('stream failed'), { code: 'E_X' }), 2, 3);
+  assert.equal(typeof detail, 'object', 'the caller receives structured data');
+  assert.equal(detail.category, 'stream-failure');
+  assert.equal(detail.code, 'E_X');
+  assert.equal(detail.attempt, 2);
+  assert.equal(detail.text, 'attempt 2/3 E_X: stream-failure');
 });

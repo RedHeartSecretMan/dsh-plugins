@@ -14,6 +14,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { collectStreamText } from './stream-text.js';
 
 /** Exact token the model must echo when it can read the instruction. */
 export const PROBE_TOKEN = 'PROBE_7F3A';
@@ -42,13 +43,18 @@ export function probeKey(route) {
 /**
  * Report whether a probe reply is exactly the demanded token.
  *
- * A model that can read the instruction echoes it verbatim; a model that cannot
- * answers something unrelated. Surrounding whitespace and Markdown emphasis are
- * tolerated, additional wording is not: extra words mean the instruction was
- * only a suggestion to that endpoint.
+ * A model that can read the instruction echoes it on the first line; a model that
+ * cannot answers something unrelated. Bounded tolerance keeps the check stable
+ * against formatting noise without accepting an unrelated reply:
+ *
+ * - leading whitespace and Markdown emphasis wrapping the token are ignored;
+ * - only the first non-empty line is judged, so commentary after a correct answer
+ *   does not turn a readable instruction into a failure;
+ * - a reply that prefixes or surrounds the token with words fails, because that
+ *   means the instruction was a suggestion rather than a command.
  *
  * @param text - Collected reply text.
- * @returns `true` when the reply is the probe token and nothing else.
+ * @returns `true` when the first non-empty line is the probe token.
  */
 export function isProbeMatch(text) {
   const line = String(text ?? '').split(/\r?\n/u).map(item => item.trim()).find(item => item.length > 0) ?? '';
@@ -60,28 +66,6 @@ export function isProbeMatch(text) {
   return candidate.trim() === PROBE_TOKEN;
 }
 
-/** Collect text blocks from a probe stream, rejecting tool calls and bad terminals. */
-async function readProbeReply(stream, signal) {
-  const blocks = new Map();
-  let finish;
-  for await (const chunk of stream) {
-    signal.throwIfAborted();
-    const index = chunk.index ?? 0;
-    if (chunk.type === 'finish') { finish = chunk.reason; continue; }
-    if (chunk.type === 'tool-call-delta' || (chunk.type === 'block-start' && chunk.blockType === 'tool-call')) {
-      throw new Error('session-title-template: probe response must not contain tool calls');
-    }
-    if (chunk.type === 'block-end') {
-      if (chunk.block.type === 'tool-call') throw new Error('session-title-template: probe response contains a tool call');
-      if (!blocks.get(index)?.closed) blocks.set(index, { text: chunk.block.type === 'text' ? chunk.block.text : '', closed: true });
-    } else if (chunk.type === 'text-delta' && !blocks.get(index)?.closed) {
-      blocks.set(index, { text: (blocks.get(index)?.text ?? '') + chunk.text, closed: false });
-    }
-  }
-  signal.throwIfAborted();
-  if (finish?.kind !== 'stop') throw new Error(`session-title-template: probe finished with ${finish?.kind ?? 'no result'}`);
-  return [...blocks.values()].map(block => block.text).join(' ');
-}
 
 /**
  * Create the probe used by one plugin activation.
@@ -129,7 +113,8 @@ export function createRoleProbe({ ctx, config, note, onVerdict, signal }) {
         purpose: 'session-title-role-probe',
         signal: combined,
       };
-      return isProbeMatch(await readProbeReply(call.stream(options), combined)) ? 'supported' : 'unsupported';
+      const reply = await collectStreamText(call.stream(options), combined, { prefix: 'session-title-template: probe' });
+      return isProbeMatch(reply) ? 'supported' : 'unsupported';
     } catch (error) {
       signal.throwIfAborted();
       // Transport trouble says nothing about role support: keep the route undecided.

@@ -1,7 +1,7 @@
 /** Register the current-session tools and the main-agent naming coordination. */
-import { registerRenameTool } from './rename.js';
+import { registerDescribeTool, registerRenameTool } from './rename.js';
 
-export async function registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId }) {
+export async function registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId, describe }) {
   const fibers = [];
   fibers.push(ctx.inject?.(['tools'], async (toolCtx) => {
     if (lifetime.signal.aborted) return;
@@ -11,6 +11,7 @@ export async function registerCoordination(ctx, { config, state, forcedRefreshes
       try { return await ctx.sessionTitle.refresh(session, signal); }
       finally { forcedRefreshes.delete(id); }
     });
+    if (describe !== undefined) registerDescribeTool(toolCtx, describe);
   }));
   if (config.agentsInstructions.enabled) {
     fibers.push(ctx.inject?.(['systemPrompt'], (promptCtx) => {

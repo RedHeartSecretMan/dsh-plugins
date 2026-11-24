@@ -12,7 +12,9 @@
 - Separate planning from execution. `planTitle` answers whether a session needs a new title, why, and what the fallback and canonical state are, from a plain snapshot object. The provider now only wires stages together, so refresh rules, fallback construction and recovery detection are testable without a session, a route or the filesystem.
 - Report title state as one snapshot. `describeTitleState` separates the built-in rules (template, date format, vocabulary, length, spacing) from optional `AGENTS.md` supplements, so a supplement is never mistaken for the whole rule set: the summary reads `内置规则 + N 个补充来源`, and only sources that contributed a naming excerpt are counted. The snapshot also reports title source and pin state, the newest failure category, and the role-probe verdict, without provider text.
 - Record diagnostics as structured data. `state.record` appends bounded JSON lines beside the human log, so the status view reads fields instead of parsing log strings. Records are truncated per field, trimmed to a bounded file, and a corrupt line is skipped rather than failing the read.
-- 247 tests.
+- Expose the snapshot through `describe_current_session_title`, a read-only tool that answers the whole status question for the calling session, so the snapshot has a production consumer instead of test-only reachability.
+- Share streamed-output reading between the title call and the role probe, so a provider quirk fixed in one path also protects the other.
+- 248 tests.
 
 ## 0.1.3 — 2026-11-16
 

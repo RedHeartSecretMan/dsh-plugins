@@ -110,6 +110,7 @@ When the Host tools service is available, the plugin registers two tools globall
 
 - `rename_current_session({ title })` calls the official title service, cancels in-flight generation and pins the accepted title.
 - `refresh_current_session_title({})` explicitly bypasses automatic stability and regenerates through `sessionTitle.refresh()`, deliberately unpinning a user title.
+- `describe_current_session_title({})` is read-only: it reports the built-in rules, the number and list of contributing supplements, the current title source and pin state, the newest failure category and the role-probe verdict.
 
 Targets come only from `execution.agent.session`; no session id is accepted. Missing/stale agents and extra fields are rejected. Success requires flush and read-back. If persistence fails, the error explains that memory may already have changed; retrying the same pinned title avoids duplicate rename events.
 
@@ -128,11 +129,12 @@ With `DSH_PROFILE_DIR` set:
 ```text
 $DSH_PROFILE_DIR/state/session-title-template/backfill-state.json
 $DSH_PROFILE_DIR/state/session-title-template/backfill.log
+$DSH_PROFILE_DIR/state/session-title-template/diagnostics.jsonl
 ```
 
 Otherwise use `$DSH_HOME/profiles/$DSH_PROFILE/state/session-title-template/`, or the legacy `$DSH_HOME/session-title-template/` only when there is no profile. `DSH_HOME` defaults to `~/.dsh`.
 
-Exclusive locks, atomic replacement and recoverable queues protect bookkeeping across activations/processes. Corrupt state is surfaced and preserved. Lock waits are bounded; locks are never stolen. After an abnormal process exit, remove a leftover `.lock` only after confirming that no writer is active. Diagnostic logs rotate at 512 KiB with one bounded backup; logging failures do not change title/bookkeeping success.
+`diagnostics.jsonl` holds structured diagnostics (title failures, probe verdicts) with per-field truncation and a bounded record count. Exclusive locks, atomic replacement and recoverable queues protect bookkeeping across activations/processes. Corrupt state is surfaced and preserved. Lock waits are bounded; locks are never stolen. After an abnormal process exit, remove a leftover `.lock` only after confirming that no writer is active. Diagnostic logs rotate at 512 KiB with one bounded backup; logging failures do not change title/bookkeeping success.
 
 ## Development
 
