@@ -66,3 +66,47 @@ export async function titleCall({
     return [...blocks.values()].map(block => block.text).join(' ');
   } finally { clearTimeout(timer); }
 }
+
+/**
+ * Classify one failure without writing provider text or model output to logs.
+ *
+ * Error messages can contain prompt fragments, response bodies or credentials.
+ * Diagnostics keep the route, attempt, provider code and a stable local category.
+ *
+ * @param error - rejection or thrown value from a title attempt.
+ * @param attempt - 1-based attempt number that failed.
+ * @param attempts - configured attempt budget.
+ * @returns Text safe to append after the `title-call-failed` label.
+ */
+export function describeTitleFailure(error, attempt, attempts) {
+  const rawCode = typeof error?.code === 'string' && error.code !== ''
+    ? error.code : String(error?.name ?? 'Error');
+  const code = rawCode.replace(/[^A-Za-z0-9_.-]/gu, '_').slice(0, 64) || 'Error';
+  const message = String(error?.message ?? '');
+  const category = /input byte budget exceeded|no input fits the configured byte budget/u.test(message)
+    ? 'input-budget'
+    : /model output did not match the title template/u.test(message)
+      ? 'invalid-title-format'
+      : /tool call|tool-calls/u.test(message)
+        ? 'tool-output'
+        : /timed out|timeout/u.test(message)
+          ? 'timeout'
+          : /terminal finish|stream failed|missing/u.test(message)
+            ? 'stream-failure'
+            : 'provider-failure';
+  return `attempt ${attempt}/${attempts} ${code}: ${category}`;
+}
+
+/**
+ * Report whether another attempt can plausibly succeed.
+ *
+ * Budget and selection failures repeat deterministically, so retrying them only
+ * delays the fallback and spends the same work twice.
+ *
+ * @param error - rejection or thrown value from a title attempt.
+ * @returns `true` when the caller should attempt again.
+ */
+export function isRetryableTitleFailure(error) {
+  const message = String(error?.message ?? '');
+  return !/input byte budget exceeded|no input fits the configured byte budget/u.test(message);
+}

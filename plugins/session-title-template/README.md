@@ -44,6 +44,9 @@ Override `id: session-title-template` in your profile's user patch. The whole `c
 | `maxInputBytes` | `4096` | Final framed JSON UTF-8 byte budget, including escaping and wrapper text |
 | `maxOutputTokens` | `4096` | Output cap; uses the lowest supported reasoning effort; the cap includes hidden reasoning, while topic length is validated separately |
 | `timeoutMs` | `60000` | Deadline for one candidate-route attempt |
+| `retryAttempts` | `3` | Total rounds including the first attempt (1–5). Each round walks every configured route in order; rounds back off by `retryDelayMs` |
+| `retryDelayMs` | `500` | Backoff base in milliseconds after the first round (0–10000); round n waits `retryDelayMs × 2^(n-1)`, capped at 10 s |
+| `roleProbe.enabled` | `true` | Observation-only probe of whether the endpoint actually receives the instruction block; verdicts are logged and never rewrite the profile or switch routes |
 | `maxProvisionalRefinements` | `4` | For summarized provisional titles, refine within the first N eligible messages; **not a rewrite counter**. Recognizable fallbacks remain retryable |
 | `agentsInstructions.enabled` | `true` | Read applicable AGENTS naming excerpts and add main-agent naming coordination; `false` disables both |
 | `agentsInstructions.maxBytes` | `4096` | Final supplemental guidance UTF-8 byte limit; integer from `256` to `65536` |
@@ -81,7 +84,7 @@ When the model is called, the current title travels as a JSON anchor with explic
 
 ## AGENTS naming guidance
 
-The plugin remains the automatic naming owner. When a title needs generation or provisional refinement, it reads naming excerpts from applicable `AGENTS.md` and `AGENTS.local.md` files. It lazily loads the public discovery helper from the in-box `@deepseek-ai/dsh-agent-instructions` SDK, declared as an optional peer so the real profile resolver can find it for external linked installations; no second Harness is installed. The helper discovers global `AGENTS.md` files under `DSH_HOME`, then `DSH_AGENTS_HOME`, followed by project files in its default `.git` root-to-current-working-directory scope. Other instruction filenames are not read. Discovery uses host-visible paths and the SDK's default baseline chain; it does not mirror a remote filesystem provider or additional deeper scopes discovered by the main agent's file operations.
+The plugin remains the automatic naming owner. When a title needs generation or provisional refinement, it reads applicable `AGENTS.md` naming excerpts. Discovery is implemented inside the plugin over the global homes and the `.git` root-to-working-directory chain, with realpath deduplication.
 
 A heading matches when it combines 会话 or 对话 with 命名 or 标题, or session or conversation with naming or title. Matching is case-insensitive for English, and headings inside fenced code blocks are ignored. For an explicit excerpt, put the intended naming guidance between these markers:
 
@@ -91,15 +94,15 @@ Prefer a concise topic describing the user's current task.
 <!-- session-title-template:end -->
 ```
 
-Only matching naming excerpts enter the supplemental prompt; unrelated engineering instructions are left out. `agentsInstructions.maxBytes` bounds the final supplemental UTF-8 text, with more-specific excerpts retained preferentially. Source reads are bounded and discovery has a soft timeout. Missing rules, SDK/read failures or the timeout preserve existing naming behavior. Files are reread when generation needs them, with no filesystem cache or continuous watcher. Changing a file alone does not regenerate an existing canonical settled provider title.
+Only matching naming excerpts enter the supplemental prompt; unrelated engineering instructions are left out. `agentsInstructions.maxBytes` bounds the final supplemental UTF-8 text, with more-specific excerpts retained preferentially. Source reads are bounded and discovery has a soft timeout. Missing rules, discovery/read failures or the timeout preserve existing naming behavior and emit a bounded diagnostic category. Files are reread when generation needs them, with no filesystem cache or continuous watcher. Changing a file alone does not regenerate an existing canonical settled provider title.
 
 AGENTS guidance may influence topic wording and provisional refinement. The configured template, creation date, type vocabulary, topic length limits and user-title pin remain authoritative. A `systemPrompt` coordination section asks the main agent to leave automatic naming to the plugin when only standing AGENTS rules request a rename; an explicit user rename should call `rename_current_session` rather than hand the task back to the GUI. This section is guidance, not a rename API restriction, and deployments that replace the complete system prompt may omit it. Set `agentsInstructions.enabled: false` to disable both the supplemental excerpts and coordination. The plugin never edits AGENTS files.
 
 ## Model errors and ownership
 
-The provider handles `text-delta`, completed `block-end` text and terminal `finish` events. Only a normal `stop` result can be accepted. Error, cancellation, truncation and tool-call partial output never become titles. Failed calls or parsing try a distinct backup route, then reject so Harness retains the current title or its built-in fallback. With no available route, a local title can be derived from the first message.
+The provider handles `text-delta`, completed `block-end` text and terminal `finish` events. Only a normal `stop` result can be accepted. Error, cancellation, truncation and tool-call partial output never become titles. Failed calls or parsing try every configured route in one round, then retry the route set with bounded exponential backoff before Harness retains the current title or its built-in fallback. With no available route, a local title can be derived from the first message.
 
-Harness suppresses automatic updates to user-pinned titles. An **explicit UI refresh** intentionally unpins them. Backfill always skips user titles, even a configured retitle target. Auxiliary calls use the built-in `session/title-llm-request` record; diagnostic files do not contain title, prompt or raw model text.
+Harness suppresses automatic updates to user-pinned titles. An **explicit UI refresh** intentionally unpins them. Backfill always skips user titles, even a configured retitle target. Auxiliary calls use the built-in `session/title-llm-request` record; diagnostic files contain only route, attempt, provider code and a bounded local failure category, never title, prompt, response or raw error text.
 
 ## Explicit current-session tools
 
@@ -133,7 +136,7 @@ Exclusive locks, atomic replacement and recoverable queues protect bookkeeping a
 
 ## Development
 
-No dependencies to install or build step. The optional AGENTS feature uses the public SDK helper shipped with Harness:
+No dependencies to install or build step. The optional AGENTS feature uses the plugin's self-contained discovery path:
 
 ```sh
 cd plugins/session-title-template
@@ -141,7 +144,7 @@ npm test
 npm run check
 ```
 
-Tests use isolated temporary directories, including AGENTS discovery/extraction and byte limits, config validation, naming coordination, multi-process state updates, flush failure, read-only backfill preflight and unload cancellation. `scripts/verify-runtime.mjs <runtime-root>` additionally checks the installed SessionStore, projections, title service and Cordis lifecycle; ASAR installs require Electron's Node carrier. It uses the real profile linked-peer resolver, tool registry and title service. The LLM and disk durability listener are fixtures: this does not test external model availability or production-writer restart recovery. For a real-model smoke test, `test/verify-gateway.mjs` is opt-in via `RUN_SESSION_TITLE_LIVE=1` and a gateway/model:
+Tests use isolated temporary directories, including AGENTS discovery/extraction and byte limits, config validation, naming coordination, multi-process state updates, flush failure, read-only backfill preflight and unload cancellation. `scripts/verify-runtime.mjs <runtime-root>` additionally checks the installed SessionStore, projections, title service and Cordis lifecycle; ASAR installs require Electron's Node carrier. It uses the real profile linked-package resolver, tool registry and title service. The LLM and disk durability listener are fixtures: this does not test external model availability or production-writer restart recovery. For a real-model smoke test, `test/verify-gateway.mjs` is opt-in via `RUN_SESSION_TITLE_LIVE=1` and a gateway/model:
 
 ```sh
 RUN_SESSION_TITLE_LIVE=1 SESSION_TITLE_GATEWAY=http://127.0.0.1:3425/v1 SESSION_TITLE_MODEL=auto/deepseek-flash MAGPIE_GATEWAY_KEY=... \

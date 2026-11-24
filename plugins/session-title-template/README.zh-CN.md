@@ -50,6 +50,9 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 | `maxInputBytes` | `4096` | **最终 JSON 框架文本**的 UTF-8 字节上限，含转义和包装 |
 | `maxOutputTokens` | `4096` | 请求输出上限；选择模型支持的最低推理档位；上限包含隐藏推理 token，标题字数另行校验 |
 | `timeoutMs` | `60000` | 每个候选路由的一次请求时限 |
+| `retryAttempts` | `3` | 包含首次尝试在内的总轮数（1 至 5）。每轮按顺序试遍所有已配置路由，轮与轮之间按 `retryDelayMs` 指数退避 |
+| `retryDelayMs` | `500` | 首轮之后的退避基准毫秒数（0 至 10000），第 n 轮等待 `retryDelayMs × 2^(n-1)`，上限 10 秒 |
+| `roleProbe.enabled` | `true` | 只读探测：确认该端点能否真正收到指令块，结果只写诊断日志，从不改写 profile 或切换路由 |
 | `maxProvisionalRefinements` | `4` | 已总结暂定标题仅在前 N 条合格消息内细化，**不是改写次数计数器**；可识别回退始终可重试 |
 | `agentsInstructions.enabled` | `true` | 读取适用的 AGENTS 命名片段并添加主代理命名协调；`false` 同时关闭两者 |
 | `agentsInstructions.maxBytes` | `4096` | 最终补充指导文本的 UTF-8 字节上限，必须是 `256` 至 `65536` 的整数 |
@@ -89,7 +92,7 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 
 ## AGENTS 命名指导
 
-插件继续负责自动命名。在需要生成标题或细化暂定标题时，读取适用的 `AGENTS.md` 和 `AGENTS.local.md` 中的命名片段。通过懒加载使用 Harness 内置 `@deepseek-ai/dsh-agent-instructions` SDK 的公开发现 helper，通过声明可选 SDK peer 使用 Harness 的正式 profile resolver，使外部 linked 安装也能解析到内置 SDK；不安装第二套 Harness。该 helper 先发现 `DSH_HOME`、`DSH_AGENTS_HOME` 下的全局 `AGENTS.md`，随后按默认 `.git` 根目录到当前工作目录的范围查找项目文件；不读取其他指令文件名。这里使用 Host 可见路径和 SDK 默认的基础指令链，不复刻远端文件系统或主代理因文件操作额外发现的更深作用域。
+插件继续负责自动命名。在需要生成标题或细化暂定标题时，读取适用的 `AGENTS.md` 命名片段。发现逻辑由插件自己实现，范围包括全局目录以及从 `.git` 根目录到当前工作目录的链路，并按 realpath 去重。
 
 Markdown 段落标题需同时包含“会话”或“对话”与“命名”或“标题”，或同时包含 session 或 conversation 与 naming 或 title，才会提取对应片段。英文匹配不区分大小写，忽略围栏代码块中的标题。也可用以下标记明确指定命名片段：
 
@@ -99,15 +102,15 @@ Markdown 段落标题需同时包含“会话”或“对话”与“命名”�
 <!-- session-title-template:end -->
 ```
 
-只把命中的命名片段加入补充提示，不注入无关的工程指令。`agentsInstructions.maxBytes` 限制最终补充文本的 UTF-8 字节数，优先保留作用域更具体的片段。源文件读取有大小上限，发现流程设软超时；没有命中规则、SDK 或读取失败以及超时，均沿用现有命名行为。仅在需要生成时重新读取，不缓存文件内容，也不持续监听。修改文件本身不会触发现有规范定稿 provider 标题重新生成。
+只把命中的命名片段加入补充提示，不注入无关的工程指令。`agentsInstructions.maxBytes` 限制最终补充文本的 UTF-8 字节数，优先保留作用域更具体的片段。源文件读取有大小上限，发现流程设软超时；没有命中规则、发现或读取失败以及超时，均沿用现有命名行为，并记一条有界诊断类别。仅在需要生成时重新读取，不缓存文件内容，也不持续监听。修改文件本身不会触发现有规范定稿 provider 标题重新生成。
 
 AGENTS 规则可以影响主题措辞和暂定标题细化，但不能覆盖配置的模板、创建日期、类型词表、主题长度限制或手动标题固定状态。新增的 `systemPrompt` 协调段要求主代理在只有常驻 AGENTS 规则要求改名时，把自动命名交给插件；用户明确要求改名时调用 `rename_current_session`，不要把任务交回 GUI。这段内容是指导，不会阻断重命名 API；完全替换系统提示词的部署可能不包含该段。设置 `agentsInstructions.enabled: false` 会同时关闭补充片段和协调段。插件不会修改 AGENTS 文件。
 
 ## 模型失败和标题归属
 
-处理 DSH 的 `text-delta`、`block-end` 和终止 `finish` 事件。只有正常 `stop` 结果可以采纳；错误、取消、token 截断和工具调用中的部分文本不会成为标题。调用或解析失败时尝试不同的备用路由；仍失败则由 DSH 保留现有标题或其内置回退。没有模型路由时可以从首条消息生成本地回退。
+处理 DSH 的 `text-delta`、`block-end` 和终止 `finish` 事件。只有正常 `stop` 结果可以采纳；错误、取消、token 截断和工具调用中的部分文本不会成为标题。调用或解析失败时先在同一轮里试下一个备用路由，全部失败后按 `retryAttempts` 退避重试整组路由；仍失败则由 DSH 保留现有标题或其内置回退。输入预算不足属于确定性失败，不重试。诊断日志记 `title-call-failed route=<provider>/<model> attempt=<n>/<总数> <错误码>: <失败类别>`，不写入原始错误文本。没有模型路由时可以从首条消息生成本地回退。
 
-DSH 会阻止普通自动请求覆盖手动标题。界面的**显式刷新**有意解除这个固定状态。历史回填即使指定了 `retitle` 也跳过手动标题。辅助模型请求记录到 DSH 内置的 `session/title-llm-request` 事件，普通诊断日志不写入标题、提示词或模型原文。
+DSH 会阻止普通自动请求覆盖手动标题。界面的**显式刷新**有意解除这个固定状态。历史回填即使指定了 `retitle` 也跳过手动标题。辅助模型请求记录到 DSH 内置的 `session/title-llm-request` 事件；诊断日志只记录路由、尝试轮次、provider 错误码和有界的本地失败类别，不写入标题、提示词、响应或原始错误文本。
 
 ## 明确改名与重新生成
 
@@ -148,7 +151,7 @@ $DSH_PROFILE_DIR/state/session-title-template/backfill.log
 
 ## 开发和验证
 
-无须安装依赖、无构建步骤；可选 AGENTS 功能使用 Harness 内置 SDK 的公开 helper：
+无须安装依赖、无构建步骤；可选 AGENTS 功能使用插件自带的文件发现逻辑：
 
 ```sh
 cd plugins/session-title-template
@@ -156,7 +159,7 @@ npm test
 npm run check
 ```
 
-测试全部使用临时目录，包括 AGENTS 发现、片段提取与字节限制、配置校验、命名协调、两个进程并发写入、失败落盘后重试、只读回填预检和卸载取消。`scripts/verify-runtime.mjs <runtime-root>` 可进一步接入已安装的真实 DSH 服务；ASAR 安装需通过 Electron 的 Node carrier 执行。它通过真实 profile linked-peer resolver、工具注册器和标题服务验证发现/刷新/改名；LLM 和磁盘 durability listener 是 fixture，不等同于外部模型可用性或完整生产 writer 的重启恢复测试；真实模型冒烟测试使用可选的 `test/verify-gateway.mjs`（`RUN_SESSION_TITLE_LIVE=1` 加网关/模型）：
+测试全部使用临时目录，包括 AGENTS 发现、片段提取与字节限制、配置校验、命名协调、两个进程并发写入、失败落盘后重试、只读回填预检和卸载取消。`scripts/verify-runtime.mjs <runtime-root>` 可进一步接入已安装的真实 DSH 服务；ASAR 安装需通过 Electron 的 Node carrier 执行。它通过真实 profile linked-package resolver、工具注册器和标题服务验证发现/刷新/改名；LLM 和磁盘 durability listener 是 fixture，不等同于外部模型可用性或完整生产 writer 的重启恢复测试；真实模型冒烟测试使用可选的 `test/verify-gateway.mjs`（`RUN_SESSION_TITLE_LIVE=1` 加网关/模型）：
 
 ```sh
 RUN_SESSION_TITLE_LIVE=1 SESSION_TITLE_GATEWAY=http://127.0.0.1:3425/v1 SESSION_TITLE_MODEL=auto/deepseek-flash MAGPIE_GATEWAY_KEY=... \

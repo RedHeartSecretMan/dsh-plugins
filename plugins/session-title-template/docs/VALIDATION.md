@@ -11,11 +11,16 @@
 | 自动刷新 | 不是每轮调用：短确认/继续跳过；显式刷新/重命名、fallback/recovery、非规范标题、provisional 新实质消息、明确换题、低词面重合与周期审计触发评估；同一消息水位不重复评估 |
 | 当前标题稳定性 | currentTitle 始终进入 prompt 与 JSON 输入，带 canonical 标志；模型按稳定性规则原样返回仍准确的标题；仅主任务实质变化时改写；显式 refresh/retitle 优先；同标题返回保留 provenance |
 | 模板与字符 | 占位符恰好一次且可辨识；字段重排、后缀和字面美元文本可往返；截断按中文等效字宽与分词/分句边界计算 |
+| 重试与失败归类 | 每轮按顺序遍历全部候选路由，健康备用路由立即接管；轮间指数退避，`retryAttempts`（1–5）与 `retryDelayMs`（0–10000）有界；输入预算不足属确定性失败只试一次；取消立即中止且不写失败日志 |
+| 子代理命名 | 子代理会话读取自身 `subagent/descriptor` 的 label，渲染为模板标题且不调用模型；label 缺失回落到消息来源；根会话不使用该来源 |
+| 标题状态快照 | 一次查询返回内置规则、补充来源数量与清单、当前标题来源与固定状态、最近失败类别、探针结论；内置与补充分离，不包含 provider 原文 |
+| 角色能力探测 | 每个 provider/model 至多一次探测；精确 token 匹配判为 supported，答非所问判为 unsupported；超时、取消和传输失败保持未判定；只写诊断日志，不改路由、不改 profile |
+| 失败诊断 | `title-call-failed` 只记录 `route`、`attempt n/总数`、provider 错误码和本地失败类别；不写标题、提示词、响应或原始错误文本 |
 | 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含 currentTitle anchor、转义和包装；优先保留首条和最新消息 |
 | 配置 | 字段、路由成对、词表和占位符校验；拒绝未知字段和已移除的旧别名 `maxExploreRefinements` / 顶层 `retitle`；`agentsInstructions` 仅接受 boolean `enabled` 和 `256` 至 `65536` 整数 `maxBytes`，解析结果独立冻结 |
-| AGENTS 发现 | 懒加载内置 `@deepseek-ai/dsh-agent-instructions` 的公开 helper 并支持 profile 回退解析；只处理 `AGENTS.md`、`AGENTS.local.md`，按全局 `DSH_HOME`、`DSH_AGENTS_HOME` 及默认 `.git` 根目录至当前工作目录范围发现 |
+| AGENTS 发现 | 插件自带发现；读取适用的 `AGENTS.md`，范围包括全局目录与从 `.git` 根逐层到当前工作目录；按 realpath 去重 |
 | AGENTS 提取 | 中文“会话/对话”与“命名/标题”组合或英文 session/conversation 与 naming/title 组合标题；忽略围栏代码块标题；支持显式 `session-title-template:start/end` 注释标记 |
-| AGENTS 预算与失败 | 仅命名片段进入最终 UTF-8 补充预算，优先保留更具体作用域；源读取有界、软超时；无规则、SDK 或读取失败沿用原有命名行为 |
+| AGENTS 预算与失败 | 仅命名片段进入最终 UTF-8 补充预算，优先保留更具体作用域；源读取有界、软超时；无规则、发现或读取失败沿用原有命名行为，并记录有界诊断类别 |
 | 命名归属 | 插件负责自动命名；补充指导不覆盖模板、创建日期、类型、长度和手动固定；主代理协调允许用户明确改名，`enabled: false` 同时关闭指导与协调 |
 | 辅助请求记录 | `session/title-llm-request` 的消息来源固定为 `dsh-session-title-llm`，与会话格式 v4 的 `titleSources` 校验一致；插件不迁移历史错误事件 |
 | 工具 | `rename_current_session` 只接收 title，`refresh_current_session_title` 不接收参数；拒绝跨会话目标、无 agent、失效会话与取消调用；均确认 flush 与读回 |
@@ -24,9 +29,9 @@
 | 状态与卸载 | 按 profile 隔离；原子写入和有界锁等待；错误后队列可恢复；卸载取消定时器并等待维护退出 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-title-template`，插件 id 与包名一致；显示名称由 locale 提供为“会话标题模板”；发布包包含全部运行资源 |
 
-单元与回归测试共 191 项，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果，`npm run check` 对所有入口和脚本执行语法检查。
+单元与回归测试共 247 项，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果，`npm run check` 对所有入口和脚本执行语法检查。
 
-`scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。已改用正式 profile resolver，不再人工映射 SDK。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
+`scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。使用正式 profile resolver 加载自包含的 linked package，不依赖未声明的 Harness SDK peer。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
 
 `test/verify-gateway.mjs` 是可选的真实网关检查，默认关闭；它需要 `RUN_SESSION_TITLE_LIVE=1`、网关地址和凭证，使用真实 `LlmRuntime`、`pi-ai` 适配器和真实标题服务生成一次标题，只校验格式、provider 和模型来源。2026-11-05 已对本地 Magpie 网关的 `auto/deepseek-flash` 实测通过；工具注册与提示词协调仍由 `verify-runtime.mjs` 覆盖，该 live 检查不进入 CI。
 
@@ -44,7 +49,7 @@
 - 有路由但请求或解析失败时，由 DSH 保留已有标题或内置兜底；完全没有路由时可生成本地格式化兜底。
 - 定点 hint 仅在开启历史维护时执行，按 id 和完全相同的 hint 去重；普通消息不会反复强制改名。
 - 状态损坏不会被当作空进度覆盖。锁不会按时间被抢占；异常退出留下的锁需确认没有活动 writer 后再清理。
-- 独立诊断日志不写标题、提示词或模型原文；标准辅助请求事件包含实际请求内容以支持追溯。
+- 独立诊断日志只写路由、尝试轮次、provider 错误码和本地失败类别，不写标题、提示词、响应或原始错误文本；标准辅助请求事件仍包含实际请求内容以支持追溯。
 - 状态保存在 profile 中，安装包可替换；个人配置、hint 和状态不进入公开仓库。
 
 ## 复现入口

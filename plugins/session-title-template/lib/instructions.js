@@ -1,6 +1,8 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { configuredPath } from "./state.js";
 
 const START_END_MARKER = /<!--[ \t]*session-title-template:(start|end)[ \t]*-->/gu;
 
@@ -81,14 +83,109 @@ export function extractNamingSections(text) {
   }).filter(Boolean);
 }
 
-async function defaultDiscover(options) {
-  let discoverBaselineInstructionFiles;
-  try { ({ discoverBaselineInstructionFiles } = await import('@deepseek-ai/dsh-agent-instructions')); }
-  catch (cause) {
-    throw Object.assign(new Error('Harness instruction SDK could not be imported', { cause }), { code: 'SDK_IMPORT_FAILED' });
+/** Test one path while preserving cancellation and real I/O failures. */
+async function exists(path, signal) {
+  signal?.throwIfAborted();
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return false;
+    throw error;
   }
-  options.signal.throwIfAborted();
-  return discoverBaselineInstructionFiles(options);
+}
+
+/** Find the nearest ancestor that owns a `.git` entry, or undefined outside a repository. */
+async function findRepositoryRoot(cwd, signal) {
+  let directory = resolve(cwd);
+  for (;;) {
+    if (await exists(join(directory, ".git"), signal)) return directory;
+    const parent = dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+}
+
+/** Build the inclusive root-to-cwd directory chain. */
+function ancestorChain(root, cwd) {
+  const chain = [];
+  let directory = resolve(cwd);
+  const resolvedRoot = resolve(root);
+  for (;;) {
+    chain.push(directory);
+    if (directory === resolvedRoot) return chain.reverse();
+    const parent = dirname(directory);
+    if (parent === directory) return chain.reverse();
+    directory = parent;
+  }
+}
+
+/** Resolve one regular instruction file and return its canonical identity. */
+async function instructionFileKey(path, signal) {
+  signal?.throwIfAborted();
+  try {
+    const info = await stat(path);
+    if (!info.isFile()) return undefined;
+    return await realpath(path);
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return undefined;
+    throw error;
+  }
+}
+
+/** Shorten a path under the home directory so prompt labels stay readable. */
+function displayPath(path) {
+  const home = homedir();
+  const fromHome = relative(home, path);
+  return fromHome === "" || (!fromHome.startsWith("..") && !isAbsolute(fromHome))
+    ? fromHome === "" ? "~" : `~/${fromHome}`
+    : path;
+}
+
+/**
+ * Discover the instruction files that apply to one working directory.
+ *
+ * The Harness bundles its own instruction SDK inside the application archive,
+ * so a linked or profile-installed plugin cannot import it at runtime. This
+ * function carries the same documented scope locally and is the only discovery
+ * path in the plugin. Scope order is the harness home, the shared agents home,
+ * then the repository root through the current working directory, so the reader
+ * can drop the broadest sources first.
+ *
+ * @param options - Discovery request from the reader.
+ * @param options.cwd - Absolute working directory of the requesting session.
+ * @param options.signal - Cancellation signal.
+ * @returns Records shaped like the SDK result: `{ absolutePath, displayPath }`.
+ */
+export async function discoverInstructionFilesLocally(options = {}) {
+  const { cwd, signal } = options;
+  if (typeof cwd !== "string" || !isAbsolute(cwd)) return [];
+  const env = process.env;
+  const harnessHome = resolve(configuredPath(env.DSH_HOME) ?? join(homedir(), ".dsh"));
+  const sharedHome = resolve(configuredPath(env.DSH_AGENTS_HOME) ?? join(homedir(), ".agents"));
+  // Match Harness precedence: DSH_HOME wins duplicate content over DSH_AGENTS_HOME.
+  const globals = [harnessHome, sharedHome];
+
+  const repositoryRoot = await findRepositoryRoot(cwd, signal);
+  const directories = repositoryRoot === undefined ? [cwd] : ancestorChain(repositoryRoot, cwd);
+
+  const records = [];
+  const seen = new Set();
+  const consider = async (directory, name) => {
+    signal?.throwIfAborted();
+    const absolutePath = resolve(directory, name);
+    const key = await instructionFileKey(absolutePath, signal);
+    if (key === undefined || seen.has(key)) return;
+    seen.add(key);
+    records.push({ absolutePath, displayPath: displayPath(absolutePath) });
+  };
+
+  for (const directory of globals) await consider(directory, "AGENTS.md");
+  for (const directory of directories) await consider(directory, "AGENTS.md");
+  signal?.throwIfAborted();
+  return records;
 }
 
 function limit(value, fallback) {
@@ -146,8 +243,8 @@ function render(entries, maxBytes) {
     : { text: "", sources: [], truncated: true };
 }
 
-/** Create a fresh, bounded reader; only the SDK owns instruction-file discovery. */
-export function createInstructionReader({ discover = defaultDiscover, timeoutMs = 2000, maxSourceBytes = 1048576, onDiagnostic = () => {} } = {}) {
+/** Create a fresh, bounded reader with local instruction discovery by default. */
+export function createInstructionReader({ discover = discoverInstructionFilesLocally, timeoutMs = 2000, maxSourceBytes = 1048576, onDiagnostic = () => {} } = {}) {
   const note = reason => { try { onDiagnostic(reason); } catch { /* Diagnostics cannot break naming. */ } };
   timeoutMs = limit(timeoutMs, 2000);
   maxSourceBytes = limit(maxSourceBytes, 1048576);
@@ -180,8 +277,6 @@ export function createInstructionReader({ discover = defaultDiscover, timeoutMs 
       const files = await discover({
         cwd,
         signal: controller.signal,
-        instructionFileCandidates: ["AGENTS.md"],
-        localInstructionFileCandidates: ["AGENTS.local.md"],
       });
       controller.signal.throwIfAborted();
       const entries = [];
@@ -231,7 +326,7 @@ export function createInstructionReader({ discover = defaultDiscover, timeoutMs 
       return await Promise.race([load(), cancellation]);
     } catch (error) {
       signal?.throwIfAborted();
-      note(controller.signal.aborted ? 'timeout' : error?.code === 'SDK_IMPORT_FAILED' ? 'sdk-import-failed' : 'discovery-failed');
+      note(controller.signal.aborted ? 'timeout' : 'discovery-failed');
       return { ...empty(), unavailable: true };
     } finally {
       clearTimeout(timer);

@@ -32,6 +32,9 @@ export const DEFAULTS = {
   maxInputBytes: 4096,
   maxOutputTokens: 4096,
   timeoutMs: 60000,
+  retryAttempts: 3,
+  retryDelayMs: 500,
+  roleProbe: { enabled: true },
   maxProvisionalRefinements: 4,
   agentsInstructions: { enabled: true, maxBytes: 4096 },
   backfill: { enabled: false },
@@ -198,6 +201,12 @@ export function resolveConfig(config) {
     ? DEFAULTS.maxProvisionalRefinements
     : raw.maxProvisionalRefinements;
 
+  const roleProbeRaw = raw.roleProbe === undefined || raw.roleProbe === null ? {} : raw.roleProbe;
+  if (typeof roleProbeRaw !== "object" || Array.isArray(roleProbeRaw)) invalid("roleProbe", "must be an object");
+  rejectUnknown(roleProbeRaw, ["enabled"], "roleProbe");
+  const roleProbeEnabled = roleProbeRaw.enabled === undefined ? DEFAULTS.roleProbe.enabled : roleProbeRaw.enabled;
+  if (typeof roleProbeEnabled !== "boolean") invalid("roleProbe.enabled", "must be a boolean");
+
   return Object.freeze({
     template,
     dateFormat,
@@ -213,7 +222,10 @@ export function resolveConfig(config) {
     maxInputBytes: requireInteger(raw.maxInputBytes === undefined ? DEFAULTS.maxInputBytes : raw.maxInputBytes, "maxInputBytes", 256, 1048576),
     maxOutputTokens: requireInteger(raw.maxOutputTokens === undefined ? DEFAULTS.maxOutputTokens : raw.maxOutputTokens, "maxOutputTokens", 8, 4096),
     timeoutMs: requireInteger(raw.timeoutMs === undefined ? DEFAULTS.timeoutMs : raw.timeoutMs, "timeoutMs", 1000, 600000),
+    retryAttempts: requireInteger(raw.retryAttempts === undefined ? DEFAULTS.retryAttempts : raw.retryAttempts, "retryAttempts", 1, 5),
+    retryDelayMs: requireInteger(raw.retryDelayMs === undefined ? DEFAULTS.retryDelayMs : raw.retryDelayMs, "retryDelayMs", 0, 10000),
     maxProvisionalRefinements: requireInteger(refinementLimit, "maxProvisionalRefinements", 1, 100),
+    roleProbe: Object.freeze({ enabled: roleProbeEnabled }),
     agentsInstructions: Object.freeze({
       enabled: agentsInstructionsEnabled,
       maxBytes: agentsInstructionsMaxBytes,

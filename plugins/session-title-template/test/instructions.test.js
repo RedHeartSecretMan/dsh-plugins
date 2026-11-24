@@ -151,10 +151,8 @@ describe("createInstructionReader", () => {
     const controller = new AbortController();
     let passedSignal;
     const read = createInstructionReader({ discover: async options => {
-      assert.deepEqual(Object.keys(options).sort(), ["cwd", "instructionFileCandidates", "localInstructionFileCandidates", "signal"]);
+      assert.deepEqual(Object.keys(options).sort(), ["cwd", "signal"]);
       assert.equal(options.cwd, f.cwd);
-      assert.deepEqual(options.instructionFileCandidates, ["AGENTS.md"]);
-      assert.deepEqual(options.localInstructionFileCandidates, ["AGENTS.local.md"]);
       assert.ok(options.signal instanceof AbortSignal);
       assert.equal(options.signal.aborted, false);
       passedSignal = options.signal;
@@ -170,11 +168,11 @@ describe("createInstructionReader", () => {
     const broad = "# 会话命名原则\nUse the broad naming rule.";
     const local = "## Conversation title\nUse the local naming rule.";
     await f.add("global/AGENTS.md", `${broad}\n# 工程实践\nNever reveal this engineering section.`);
-    await f.add("nested/AGENTS.local.md", `General preamble.\n${local}\n## Engineering\nDo not include.`);
+    await f.add("nested/AGENTS.md", `General preamble.\n${local}\n## Engineering\nDo not include.`);
     const read = createInstructionReader({ discover: f.discover });
     assert.deepEqual(await read({ cwd: f.cwd }), {
-      text: `${label("global/AGENTS.md")}${broad}\n\n${label("nested/AGENTS.local.md")}${local}`,
-      sources: ["global/AGENTS.md", "nested/AGENTS.local.md"],
+      text: `${label("global/AGENTS.md")}${broad}\n\n${label("nested/AGENTS.md")}${local}`,
+      sources: ["global/AGENTS.md", "nested/AGENTS.md"],
     });
     assert.equal((await read({ cwd: f.cwd })).text.includes(f.cwd), false);
   });
@@ -194,10 +192,10 @@ describe("createInstructionReader", () => {
     const specific = "## Conversation title\nSpecific-only rule.";
     const first = await f.add("AGENTS.md", `${broad}\n# Engineering\nSkip.\n${repeated}`);
     f.files.push({ ...first, displayPath: "duplicate-path/AGENTS.md" });
-    await f.add("nested/AGENTS.local.md", `${repeated}\n# Engineering\nSkip.\n${specific}`);
+    await f.add("nested/AGENTS.md", `${repeated}\n# Engineering\nSkip.\n${specific}`);
     const read = createInstructionReader({ discover: f.discover });
     const result = await read({ cwd: f.cwd });
-    assert.deepEqual(result.sources, ["AGENTS.md", "nested/AGENTS.local.md"]);
+    assert.deepEqual(result.sources, ["AGENTS.md", "nested/AGENTS.md"]);
     assert.equal(result.text.match(/Shared rule\./gu)?.length, 1);
     assert.ok(result.text.indexOf("Broad-only") < result.text.indexOf("Shared rule"));
     assert.ok(result.text.indexOf("Shared rule") < result.text.indexOf("Specific-only"));
@@ -215,11 +213,11 @@ describe("createInstructionReader", () => {
     const f = await fixture(t);
     await f.add("AGENTS.md", "# 会话命名\nBroad rule.");
     const specific = "# 对话标题\nSpecific rule.";
-    await f.add("nested/AGENTS.local.md", specific);
-    const expected = label("nested/AGENTS.local.md") + specific;
+    await f.add("nested/AGENTS.md", specific);
+    const expected = label("nested/AGENTS.md") + specific;
     const read = createInstructionReader({ discover: f.discover });
     const result = await read({ cwd: f.cwd, maxBytes: Buffer.byteLength(expected) });
-    assert.deepEqual(result, { text: expected, sources: ["nested/AGENTS.local.md"], truncated: true });
+    assert.deepEqual(result, { text: expected, sources: ["nested/AGENTS.md"], truncated: true });
   });
 
   it("bounds long Chinese and emoji excerpts without splitting UTF8, counting the entire display label", async t => {
@@ -259,10 +257,10 @@ describe("createInstructionReader", () => {
     const exact = "# 会话标题\n" + "😀中文".repeat(30);
     const maxSourceBytes = Buffer.byteLength(exact);
     await f.add("AGENTS.md", `${exact}x`);
-    await f.add("nested/AGENTS.local.md", exact);
+    await f.add("nested/AGENTS.md", exact);
     const result = await createInstructionReader({ discover: f.discover, maxSourceBytes })({ cwd: f.cwd });
     assert.deepEqual(result, {
-      text: label("nested/AGENTS.local.md") + exact, sources: ["nested/AGENTS.local.md"], truncated: true,
+      text: label("nested/AGENTS.md") + exact, sources: ["nested/AGENTS.md"], truncated: true,
     });
   });
 
@@ -292,8 +290,8 @@ describe("createInstructionReader", () => {
     assert.deepEqual(await read({ cwd: f.cwd }), unavailable);
     await writeFile(file.absolutePath, "# Engineering\nNaming rule removed.", "utf8");
     assert.deepEqual(await read({ cwd: f.cwd }), empty);
-    await f.add("nested/AGENTS.local.md", "# Conversation naming\nNew local rule.");
-    assert.deepEqual((await read({ cwd: f.cwd })).sources, ["nested/AGENTS.local.md"]);
+    await f.add("nested/AGENTS.md", "# Conversation naming\nNew local rule.");
+    assert.deepEqual((await read({ cwd: f.cwd })).sources, ["nested/AGENTS.md"]);
   });
 
   it("degrades discovery failure and recovers on a later call without caching failure", async t => {

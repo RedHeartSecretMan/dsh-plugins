@@ -1,11 +1,14 @@
 /** Structured titles and current-session metadata tools for DeepSeek Harness. */
+import { setTimeout as delay } from 'node:timers/promises';
 import { resolveConfig } from './lib/config.js';
 import { createStateStore, stateDirectory } from './lib/state.js';
 import { createInstructionReader } from './lib/instructions.js';
 import { backfillTitles } from './lib/backfill.js';
 import { buildFallbackTitle, buildSystemPrompt, compileTitlePattern, formatDate, frameMessages, isFormattedTitle, isSettledTitle, parseModelTitle, selectContextMessages } from './lib/title.js';
-import { decideTitleRefresh } from './lib/refresh-policy.js';
-import { resolveRoute, titleCall } from './lib/run.js';
+import { planTitle } from './lib/title-plan.js';
+import { readDelegationLabel } from './lib/delegation.js';
+import { resolveRoute, titleCall, describeTitleFailure, isRetryableTitleFailure } from './lib/run.js';
+import { createRoleProbe } from './lib/role-probe.js';
 import { registerCoordination } from './lib/coordination.js';
 
 export const name = 'session-title-template';
@@ -23,8 +26,25 @@ export async function apply(ctx, rawConfig) {
   const readInstructions = config.agentsInstructions.enabled
     ? createInstructionReader({ onDiagnostic: reason => state.note(`agents-instructions-${reason}`) }) : undefined;
   const forcedRefreshes = new Set();
+  const roleProbe = createRoleProbe({
+    ctx,
+    config,
+    note: line => state.note(line),
+    onVerdict: verdict => state.record({ kind: 'role-probe', route: `${verdict.provider}/${verdict.model}`, verdict: verdict.verdict }),
+    signal: lifetime.signal,
+  });
   await registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId: name });
-  const titleOptions = (date) => ({ pattern, date, template: config.template, types: config.types, cjkSpacing: config.cjkSpacing, topicMaxChars: config.topicMaxChars });
+  // Every field planning needs travels together: the fallback type builds the
+  // pre-model title, and parse/format checks need pattern and vocabulary.
+  const titleOptions = (date) => ({
+    pattern,
+    date,
+    template: config.template,
+    types: config.types,
+    fallbackType: config.fallbackType,
+    cjkSpacing: config.cjkSpacing,
+    topicMaxChars: config.topicMaxChars,
+  });
   let backfillRun;
   let timer;
 
@@ -41,47 +61,47 @@ export async function apply(ctx, rawConfig) {
       const current = request.currentTitle ?? ctx.sessionTitle.get(request.session);
       // Native provider requests do not carry a refresh/automatic discriminator.
       // Our explicit refresh tool and targeted backfill supply an unambiguous intent.
-      const explicitRefresh = forcedRefreshes.has(String(request.session.id));
-      const targeted = activeRetitles.has(String(request.session.id));
-      const forced = targeted || explicitRefresh;
-      const hint = activeRetitles.get(String(request.session.id))
-        ?? (explicitRefresh ? 'Explicit refresh: reconsider the session topic; do not keep a poor title merely because its format is valid.' : undefined);
-      const fallback = buildFallbackTitle({ date, template: config.template, fallbackType: config.fallbackType, sourceText: messages[0].text, cjkSpacing: config.cjkSpacing, topicMaxChars: config.topicMaxChars });
-      // A deterministic first-message truncation has never demonstrated a useful
-      // summary. Recognize legacy provider-labelled fallbacks as well, even when
-      // old versions attached model metadata to them.
-      const needsRecovery = current?.title === fallback
-        || (current?.source.kind === 'provider' && !current.source.model
-          && isFormattedTitle(current.title, options) && fallback.startsWith(current.title));
+      const sessionId = String(request.session.id);
+      const explicitRefresh = forcedRefreshes.has(sessionId);
+      const targeted = activeRetitles.has(sessionId);
       const keepCurrent = () => {
         const available = new Set(messages.map(message => message.seq));
         const cited = (current.messageSeqs ?? []).filter(seq => available.has(seq));
         const model = current.source.kind === 'provider' ? current.source.model : undefined;
         return { title: current.title, messageSeqs: cited.length ? cited : [messages[0].seq], ...(model ? { model } : {}) };
       };
-      const canonical = current ? isFormattedTitle(current.title, options) : false;
-      const sessionId = String(request.session.id);
-      // Adaptive evaluation replaces the old unconditional settled-title return:
-      // a settled title is kept only while the cheap local policy finds no reason
-      // to ask the model again. The decision is anchored to the last evaluation
-      // recorded in memory, so the same messages are not evaluated repeatedly.
-      const decision = decideTitleRefresh({
+      // Planning is a pure decision over the snapshot: it owns the refresh policy,
+      // the fallback title and the canonical check, so this provider only wires it.
+      const delegationLabel = readDelegationLabel(request.session);
+      const plan = planTitle({
         messages,
         current,
-        canonical,
-        provisional: canonical && !isSettledTitle(current.title, options),
-        forced,
-        recovery: needsRecovery,
+        options,
+        explicitRefresh,
+        targeted,
+        hint: activeRetitles.get(sessionId),
         lastEvaluated: lastEvaluations.get(sessionId),
+        delegationLabel,
+        isSubagent: delegationLabel !== undefined,
       });
-      if (!decision.refresh) return keepCurrent();
-      const currentTitle = current ? { title: current.title, canonical } : undefined;
+      if (!plan.refresh) return keepCurrent();
+      const { fallback, currentTitle, hint, canonical, targeted: targetedRetitle, delegationTitle } = plan;
+      // A delegation label already names the session; the model is only needed for
+      // refinement, so the deterministic title is emitted without a request.
+      if (delegationTitle !== undefined
+        && !plan.forced
+        && current?.source.kind !== 'provider') {
+        return {
+          title: delegationTitle,
+          messageSeqs: [messages[0].seq],
+        };
+      }
       const selected = selectContextMessages(messages, config.maxInputBytes, undefined, currentTitle);
       if (!selected.length) throw new Error('session-title-template: no input fits the configured byte budget');
       const messageSeqs = selected.map(message => message.seq);
       let route = resolveRoute(config, request, ctx);
       const fallbackRoute = config.backfill.fallbackRoute;
-      if (targeted && fallbackRoute) route = fallbackRoute;
+      if (targetedRetitle && fallbackRoute) route = fallbackRoute;
       if (!route) {
         if (explicitRefresh) throw new Error('Cannot regenerate the title: no model route is available');
         if (current && canonical) return keepCurrent();
@@ -93,29 +113,54 @@ export async function apply(ctx, rawConfig) {
       if (namingGuidance?.unavailable) state.note('agents-instructions-unavailable');
       const system = buildSystemPrompt({ ...config, template: config.template, dateLabel: date, typeLabel: config.types[0].key, topicLabel: config.language === 'en' ? 'Topic' : '主题', isRefining: messages.length > 1, hint, namingGuidance, currentTitle });
       const input = frameMessages(selected, currentTitle);
+      // Observe whether this endpoint can actually receive the instruction block.
+      // The run is detached: it must never delay or fail title generation.
+      void roleProbe.probe(route, request).catch(() => {});
       const routes = [route];
       if (fallbackRoute && (route.provider !== fallbackRoute.provider || route.model !== fallbackRoute.model)) routes.push(fallbackRoute);
       let failure;
-      for (const target of routes) {
+      let abandoned = false;
+      // One round tries every configured route once, so a healthy fallback still
+      // wins immediately; later rounds retry the whole set with backoff.
+      for (let attempt = 1; attempt <= config.retryAttempts && !abandoned; attempt += 1) {
+        for (const target of routes) {
+          try {
+            const text = await titleCall({
+              ctx, config, request, route: target, system, input, messageSeqs, signal, providerId: name,
+            });
+            signal.throwIfAborted();
+            const parsed = parseModelTitle(text, options);
+            if (!parsed) throw new Error('session-title-template: model output did not match the title template');
+            // Record what was actually evaluated, even when the model keeps the
+            // title: later prompts only need to consider newer messages.
+            const lastSeq = messages.reduce((max, message) => (Number.isSafeInteger(message.seq) && message.seq > max ? message.seq : max), 0);
+            lastEvaluations.set(sessionId, { seq: lastSeq, count: messages.length });
+            // An unchanged provider title is a deliberate keep, not a rewrite: the
+            // previous provenance and cited messages remain the source of truth.
+            if (current?.source.kind === 'provider' && parsed.title === current.title) return keepCurrent();
+            return { title: parsed.title, messageSeqs, model: { provider: target.provider, model: target.model } };
+          } catch (error) {
+            signal.throwIfAborted();
+            failure = error;
+            // The label alone cannot separate a route failure from an unusable
+            // model reply; keep the cause so the next incident is diagnosable.
+            const failureLine = describeTitleFailure(error, attempt, config.retryAttempts);
+            state.note(`title-call-failed route=${target.provider}/${target.model} ${failureLine}`);
+            // Structured twin of the log line: the status view reads fields, not text.
+            state.record({
+              kind: 'title-call-failed',
+              route: `${target.provider}/${target.model}`,
+              attempt,
+              category: failureLine.split(': ').at(-1),
+            });
+            if (!isRetryableTitleFailure(error)) { abandoned = true; break; }
+          }
+        }
+        if (abandoned || attempt >= config.retryAttempts) break;
         try {
-          const text = await titleCall({
-            ctx, config, request, route: target, system, input, messageSeqs, signal, providerId: name,
-          });
+          await delay(Math.min(config.retryDelayMs * 2 ** (attempt - 1), 10_000), undefined, { signal });
+        } catch {
           signal.throwIfAborted();
-          const parsed = parseModelTitle(text, options);
-          if (!parsed) throw new Error('session-title-template: model output did not match the title template');
-          // Record what was actually evaluated, even when the model keeps the
-          // title: later prompts only need to consider newer messages.
-          const lastSeq = messages.reduce((max, message) => (Number.isSafeInteger(message.seq) && message.seq > max ? message.seq : max), 0);
-          lastEvaluations.set(sessionId, { seq: lastSeq, count: messages.length });
-          // An unchanged provider title is a deliberate keep, not a rewrite: the
-          // previous provenance and cited messages remain the source of truth.
-          if (current?.source.kind === 'provider' && parsed.title === current.title) return keepCurrent();
-          return { title: parsed.title, messageSeqs, model: { provider: target.provider, model: target.model } };
-        } catch (error) {
-          signal.throwIfAborted();
-          failure = error;
-          state.note('title-call-failed');
         }
       }
       throw failure;
@@ -124,6 +169,9 @@ export async function apply(ctx, rawConfig) {
 
   // Both delayed and active maintenance are owned by this plugin activation.
   ctx.effect(() => async () => {
+    // Drain detached probes first: aborting the lifetime would cancel them before
+    // their verdict reaches the diagnostic log.
+    await roleProbe.idle();
     lifetime.abort(new Error('session-title-template: plugin disposed'));
     clearTimeout(timer);
     await backfillRun;

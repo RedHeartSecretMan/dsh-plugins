@@ -21,6 +21,12 @@ const STATE_LOCK_WAIT_MS = 5_000;
 const LOG_LOCK_WAIT_MS = 200;
 const LOCK_RETRY_MS = 20;
 const LOG_LIMIT_BYTES = 512 * 1024;
+/** Structured diagnostics kept as JSON lines beside the human log. */
+const RECORD_FILE = "diagnostics.jsonl";
+/** Cap on retained records so the file cannot grow without bound. */
+const RECORD_LIMIT = 500;
+/** Longest string field kept verbatim in a record. */
+const RECORD_FIELD_MAX = 200;
 const LOG_ENTRY_LIMIT_BYTES = 16 * 1024;
 
 // Symbol.for also shares queues when an activation imports another module URL.
@@ -28,7 +34,7 @@ const queueSymbol = Symbol.for("session-title-template.file-queues");
 const queues = globalThis[queueSymbol] ??= new Map();
 
 /** Expand a conventional home prefix and normalize a configured path. */
-function configuredPath(value) {
+export function configuredPath(value) {
   if (typeof value !== "string" || value.trim() === "") return undefined;
   const path = value.trim();
   if (path === "~") return homedir();
@@ -228,6 +234,7 @@ export function createStateStore({ directory, log }) {
   directory = resolve(directory);
   const stateFile = join(directory, "backfill-state.json");
   const logFile = join(directory, "backfill.log");
+  const recordFile = join(directory, RECORD_FILE);
 
   async function notify(line) {
     try {
@@ -254,6 +261,67 @@ export function createStateStore({ directory, log }) {
     });
   }
 
+  /** Clamp one record field to a bounded, log-safe string. */
+  function boundField(value) {
+    const text = typeof value === "string" ? value : value === undefined ? undefined : String(value);
+    if (text === undefined) return undefined;
+    return text.length > RECORD_FIELD_MAX ? `${text.slice(0, RECORD_FIELD_MAX - 3)}...` : text;
+  }
+
+  /** Drop undefined fields and clamp the rest so a record stays one short line. */
+  function normalizeRecord(record) {
+    if (record === null || typeof record !== "object" || Array.isArray(record)) throw new TypeError("A record must be an object");
+    const normalized = {};
+    for (const [key, value] of Object.entries(record)) {
+      if (value === undefined) continue;
+      normalized[key] = typeof value === "number" || typeof value === "boolean" ? value : boundField(value);
+    }
+    return { at: Date.now(), ...normalized };
+  }
+
+  function record(entry) {
+    return enqueue(recordFile, async () => {
+      try {
+        await mkdir(directory, { recursive: true });
+        await appendFile(recordFile, `${JSON.stringify(normalizeRecord(entry))}\n`, { encoding: "utf8", mode: 0o600 });
+        await truncateRecords(recordFile, RECORD_LIMIT);
+      } catch {
+        await notify("session-title-template: diagnostic record write failed");
+      }
+    });
+  }
+
+  /** Keep only the newest records so the JSONL file stays bounded. */
+  async function truncateRecords(file, limit) {
+    try {
+      const raw = await readFile(file, "utf8");
+      const lines = raw.split("\n").filter(line => line.trim() !== "");
+      if (lines.length <= limit) return;
+      await writeFile(file, `${lines.slice(-limit).join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+    } catch {
+      // Trimming is best effort; an untouched file still reads back correctly.
+    }
+  }
+
+  async function recentRecords({ kind, limit = RECORD_LIMIT } = {}) {
+    try {
+      const raw = await readFile(recordFile, "utf8");
+      const entries = [];
+      for (const line of raw.split("\n")) {
+        if (line.trim() === "") continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (kind === undefined || parsed.kind === kind) entries.push(parsed);
+        } catch {
+          // A partially written line is skipped rather than failing the read.
+        }
+      }
+      return Number.isSafeInteger(limit) && limit > 0 ? entries.slice(-limit) : entries;
+    } catch {
+      return [];
+    }
+  }
+
   function update(mutate, { signal } = {}) {
     return enqueue(stateFile, async () => {
       signal?.throwIfAborted();
@@ -272,6 +340,7 @@ export function createStateStore({ directory, log }) {
     directory,
     stateFile,
     logFile,
+    recordFile,
     read: ({ signal } = {}) => enqueue(stateFile, async () => {
       signal?.throwIfAborted();
       return readStateFile(stateFile, signal);
@@ -287,12 +356,16 @@ export function createStateStore({ directory, log }) {
     }, options),
     /** Best-effort append; failures never reject or poison later log writes. */
     append,
+    /** Best-effort structured diagnostic; same failure policy as append. */
+    record,
+    /** Read retained structured diagnostics, newest last. */
+    recentRecords,
     note(line) {
       void append(line);
     },
     /** Drain shared state/log tails without rethrowing already surfaced errors. */
     async idle() {
-      const keys = [filenameKey(stateFile), filenameKey(logFile)];
+      const keys = [filenameKey(stateFile), filenameKey(logFile), filenameKey(recordFile)];
       for (;;) {
         const pending = keys.map((key) => queues.get(key));
         await Promise.all(pending);

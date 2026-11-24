@@ -34,22 +34,21 @@ try {
   const profile = loadProfileDirectory('verify-runtime', profileDir, installAnchor);
   const resolution = await createRuntimeResolution({ installAnchor, profile, home });
   await ctx.plugin(PluginPackages, { resolution });
-  // This is the real profile resolver. A missing peer in package.json fails this
-  // test; no ad hoc registerHooks mapping can hide an undeclared dependency.
+  // Load the linked package through the real profile resolver. The package is
+  // self-contained and must not rely on hidden application internals.
   const plugin = await import(pathToFileURL(join(packageLink, 'index.js')).href);
   await writeFile(join(process.env.DSH_HOME, 'AGENTS.md'), '# 会话命名规则\nGlobalNamingMarker。\n# 工程实践\nGLOBAL_ENGINEERING_MUST_NOT_APPEAR');
   await writeFile(join(process.env.DSH_AGENTS_HOME, 'AGENTS.md'), '# Session titles\nSharedNamingMarker.\n# Engineering\nSHARED_ENGINEERING_MUST_NOT_APPEAR');
   await writeFile(join(home, 'project', 'AGENTS.md'), '# Session naming\nProjectNamingMarker.\n## Wording\nUse API nouns.\n# Engineering\nPROJECT_ENGINEERING_MUST_NOT_APPEAR');
-  await writeFile(join(cwd, 'AGENTS.local.md'), '# Conversation titles\nLocalNamingMarker.');
   await writeFile(join(original, 'AGENTS.md'), '# Session naming\nWRONG_DIRECTORY_MUST_NOT_APPEAR');
   await ctx.plugin(Sessions); await ctx.plugin(Projections); await ctx.plugin(SystemPrompt, {}); await ctx.plugin(Tools); await ctx.plugin(nativeExecutorModule);
   ctx.provide('fs', {});
   await ctx.plugin(WorkingDirectory, { defaultDirectory: original });
   ctx.provide('llm', { async prepareCall(config) { return { config, async *stream(options) {
     calls++;
-    for (const marker of ['GlobalNamingMarker', 'SharedNamingMarker', 'ProjectNamingMarker', 'LocalNamingMarker']) assert.ok(options.system.includes(marker), marker);
-    assert.ok(options.system.indexOf('GlobalNamingMarker') < options.system.indexOf('ProjectNamingMarker'));
-    assert.ok(options.system.indexOf('ProjectNamingMarker') < options.system.indexOf('LocalNamingMarker'));
+    for (const marker of ['GlobalNamingMarker', 'SharedNamingMarker', 'ProjectNamingMarker']) assert.ok(options.system.includes(marker), marker);
+    assert.ok(options.system.indexOf('GlobalNamingMarker') < options.system.indexOf('SharedNamingMarker'));
+    assert.ok(options.system.indexOf('SharedNamingMarker') < options.system.indexOf('ProjectNamingMarker'));
     assert.ok(!options.system.includes('ENGINEERING_MUST_NOT_APPEAR'));
     assert.ok(!options.system.includes('WRONG_DIRECTORY_MUST_NOT_APPEAR'));
     if (began) { began(); began = undefined; await new Promise(resolve => { release = resolve; }); }
@@ -127,7 +126,7 @@ try {
   assert.equal(recovered.title, '[1025][修复] 排查登录失败');
   await recoveryPlugin.dispose();
   assert.ok(snapshot.title);
-  console.log('Installed Harness contract: PASS (real profile linked-peer resolution, AGENTS discovery, explicit refresh, tool registration/validation, current-session boundary, pin vs in-flight generation, flush/read-back and unload; LLM and durability listener are fixtures)');
+  console.log('Installed Harness contract: PASS (real profile linked-package resolution, AGENTS discovery, explicit refresh, tool registration/validation, current-session boundary, pin vs in-flight generation, flush/read-back and unload; LLM and durability listener are fixtures)');
 } finally {
   release?.();
   await ctx.fiber.dispose();
