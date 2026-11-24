@@ -14,10 +14,10 @@
 
 需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3`、`0.2.2-rc.1` 与 `0.2.2-rc.2` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
-包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.1.3`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.2.0`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz
 ```
 
 也可以从仓库目录安装：
@@ -84,7 +84,7 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 
 插件会自动跟随对话，但不会每条消息都调用模型。本地轻量策略先判断是否值得评估：
 
-- 始终评估：显式刷新/定点重命名、fallback/recovery 标题、非规范标题、首个 provider 标题，以及出现新实质消息的 provisional 标题。
+- 始终评估：显式刷新/定点重命名、fallback/recovery 标题、非规范标题、首个 provider 标题，以及仍在 `maxProvisionalRefinements` 窗口内、出现新实质消息的 provisional 标题。
 - 触发评估：明确换题短语；与当前标题和近期消息词面重合度低的实质新消息；每 6 条人类消息或约 1,500 个新增 UTF-8 字节的周期审计。
 - 跳过短确认/继续消息；同一批已评估消息不重复评估。
 
@@ -114,7 +114,7 @@ DSH 会阻止普通自动请求覆盖手动标题。界面的**显式刷新**有
 
 ## 明确改名与重新生成
 
-Host 在工具服务可用时向所有 agent preset 注册两个默认排他执行的工具；关闭 `agentsInstructions` 不会关闭工具：
+Host 在工具服务可用时向所有 agent preset 注册三个默认排他执行的工具（`rename_current_session`、`refresh_current_session_title`、只读的 `describe_current_session_title`）；关闭 `agentsInstructions` 不会关闭工具。开启 `backfill.enabled` 时另加 `backfill_session_titles`，它默认只预览：
 
 | 工具 | 参数 | 行为 |
 |---|---|---|
@@ -122,7 +122,7 @@ Host 在工具服务可用时向所有 agent preset 注册两个默认排他执�
 | `refresh_current_session_title` | 无 | 明确绕过自动稳定性保护，调用正式 `sessionTitle.refresh()` 重新生成；有意解除手动固定 |
 | `describe_current_session_title` | 无 | 只读：返回内置规则、补充来源数量与清单、当前标题来源与固定状态、最近失败类别、探针结论 |
 
-目标只从 `execution.agent.session` 取得，不接受会话 id；拒绝无 agent、非 live session 和多余字段。两个工具都在 flush 成功并读回核对后报告已保存。落盘失败会明确说明内存可能已改变；同一个已固定标题的改名重试不重复写事件。工具走 Harness 正常执行策略，不声明只读或绕过权限。
+目标只从 `execution.agent.session` 取得，不接受会话 id；拒绝无 agent、非 live session 和多余字段。两个写工具（rename 与 refresh）在 flush 成功并读回核对后报告已保存；只读的 `describe_current_session_title` 不写盘。落盘失败会明确说明内存可能已改变；同一个已固定标题的改名重试不重复写事件。工具走 Harness 正常执行策略，不声明只读或绕过权限。
 
 当前已验证的 Harness provider 请求不包含自动/手动刷新原因，所以不根据事件序号或用户文字猜测意图。**需要强制重新生成时使用 `refresh_current_session_title`**；内置 GUI refresh 仍可能被已总结标题的自动稳定性保护保留。首次/回退标题恢复不受此限制。后续 SDK 若提供明确触发原因，应再接入内置刷新。
 

@@ -2,16 +2,16 @@
 
 English | [简体中文](README.zh-CN.md) · [Catalog](../../README.md)
 
-A configurable `[date][type] topic` title provider for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Dates come from session creation timestamps; the type vocabulary, template, time zone and prompt language are configurable. Two current-session tools support explicit rename and regeneration.
+A configurable `[date][type] topic` title provider for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Dates come from session creation timestamps; the type vocabulary, template, time zone and prompt language are configurable. Three current-session tools support explicit rename, regeneration and a read-only status view, and a sidebar UI exposes the same operations.
 
 ## Install
 
 Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3`, `0.2.2-rc.1` and `0.2.2-rc.2` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-title-template`, version `0.1.3`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-title-template`, version `0.2.0`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz
 ```
 
 To install from a checkout instead:
@@ -76,7 +76,7 @@ The default Chinese vocabulary is 功能, 设计, 修复, 优化, 发布, 运维
 
 The provider follows the conversation automatically, but does not spend one model call per prompt. A cheap local policy decides whether a title evaluation is worthwhile:
 
-- Always evaluate: explicit refresh/targeted retitle, a fallback/recovery title, a non-canonical title, the first provider title, or a provisional title with new substantive input.
+- Always evaluate: explicit refresh/targeted retitle, a fallback/recovery title, a non-canonical title, the first provider title, or a provisional title still inside its `maxProvisionalRefinements` window with new substantive input.
 - Evaluate on explicit topic-shift phrases, a substantive message with low lexical overlap against the current title and recent messages, and a periodic audit after six human messages or roughly 1,500 new UTF-8 bytes.
 - Skip short acknowledgements and continuation messages; the same evaluated messages are not evaluated again.
 
@@ -106,13 +106,13 @@ Harness suppresses automatic updates to user-pinned titles. An **explicit UI ref
 
 ## Explicit current-session tools
 
-When the Host tools service is available, the plugin registers two tools globally across agent presets. Disabling AGENTS guidance does not remove them. Both keep the default exclusive scheduling and normal Harness execution policy.
+When the Host tools service is available, the plugin registers three tools globally across agent presets: `rename_current_session`, `refresh_current_session_title` and the read-only `describe_current_session_title`. Disabling AGENTS guidance does not remove them. All three keep the default exclusive scheduling and normal Harness execution policy. With `backfill.enabled`, a fourth tool `backfill_session_titles` previews historical repairs and applies only the ids a person approved.
 
 - `rename_current_session({ title })` calls the official title service, cancels in-flight generation and pins the accepted title.
 - `refresh_current_session_title({})` explicitly bypasses automatic stability and regenerates through `sessionTitle.refresh()`, deliberately unpinning a user title.
 - `describe_current_session_title({})` is read-only: it reports the built-in rules, the number and list of contributing supplements, the current title source and pin state, the newest failure category and the role-probe verdict.
 
-Targets come only from `execution.agent.session`; no session id is accepted. Missing/stale agents and extra fields are rejected. Success requires flush and read-back. If persistence fails, the error explains that memory may already have changed; retrying the same pinned title avoids duplicate rename events.
+Targets come only from `execution.agent.session`; no session id is accepted. Missing/stale agents and extra fields are rejected. Both write tools require flush and read-back; the read-only status tool writes nothing. If persistence fails, the error explains that memory may already have changed; retrying the same pinned title avoids duplicate rename events.
 
 The tested Harness provider request carries no automatic/explicit trigger. The plugin does not guess from event order or words in user messages. **Use `refresh_current_session_title` for a forced regeneration**: native GUI refresh can still retain an already summarized title under the automatic stability policy. Initial/fallback recovery is unaffected. A future SDK trigger discriminator can enable direct GUI-refresh support.
 

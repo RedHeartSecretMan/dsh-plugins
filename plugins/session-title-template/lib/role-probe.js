@@ -20,7 +20,7 @@ import { collectStreamText } from './stream-text.js';
 export const PROBE_TOKEN = 'PROBE_7F3A';
 
 /** Give up after this many inconclusive attempts so a flaky link cannot keep costing calls. */
-export const MAX_UNKNOWN_ATTEMPTS = 3;
+const MAX_UNKNOWN_ATTEMPTS = 3;
 
 /** Cap the probe deadline even when the configured title timeout is generous. */
 const PROBE_TIMEOUT_CEILING_MS = 15_000;
@@ -79,7 +79,7 @@ export function isProbeMatch(text) {
  * @param options.config - Resolved plugin config.
  * @param options.note - Diagnostic sink; receives one line per settled verdict.
  * @param options.signal - Plugin lifetime signal.
- * @returns Probe API with `probe`, `status` and `idle`.
+ * @returns Probe API with `ensure`, `verdictOf` and `drained`.
  */
 export function createRoleProbe({ ctx, config, note, onVerdict, signal }) {
   const verdicts = new Map();
@@ -129,11 +129,15 @@ export function createRoleProbe({ ctx, config, note, onVerdict, signal }) {
     /**
      * Start a probe for one route unless a verdict or a run already exists.
      *
+     * Callers start observation and read the answer separately: this returns the
+     * outcome as a convenience for tests and the status path, but a title call
+     * that only wants the side effect detaches it.
+     *
      * @param route - Resolved provider/model pair.
      * @param request - Optional title request supplying a session and cancellation.
      * @returns `supported`, `unsupported`, `unknown`, or undefined when disabled.
      */
-    async probe(route, request) {
+    async ensure(route, request) {
       if (!config.roleProbe.enabled) return undefined;
       const key = probeKey(route);
       if (key === undefined) return undefined;
@@ -154,22 +158,22 @@ export function createRoleProbe({ ctx, config, note, onVerdict, signal }) {
         verdicts.set(key, result);
         checkedAt.set(key, Date.now());
         note(`role-probe route=${route.provider}/${route.model} result=${result}`);
-        try { onVerdict?.({ provider: route.provider, model: route.model, verdict: result }); } catch { /* diagnostics never fail naming */ }
+        // Carry the session so the diagnostic record can be attributed: a
+        // verdict reached while naming one session must not explain another's
+        // status view.
+        const sessionId = request?.session?.id;
+        try {
+          onVerdict?.({
+            provider: route.provider,
+            model: route.model,
+            verdict: result,
+            ...(sessionId === undefined ? {} : { sessionId: String(sessionId) }),
+          });
+        } catch { /* diagnostics never fail naming */ }
         return result;
       })().finally(() => { inflight.delete(key); });
       inflight.set(key, work);
       return work;
-    },
-
-    /**
-     * Read the settled verdict for one route.
-     *
-     * @param route - Resolved provider/model pair.
-     * @returns `supported` or `unsupported`, or undefined when not settled.
-     */
-    status(route) {
-      const key = probeKey(route);
-      return key === undefined ? undefined : verdicts.get(key);
     },
 
     /**
@@ -178,14 +182,19 @@ export function createRoleProbe({ ctx, config, note, onVerdict, signal }) {
      * @param route - Resolved provider/model pair.
      * @returns Verdict and timestamp, or undefined when not settled.
      */
-    detail(route) {
+    verdictOf(route) {
       const key = probeKey(route);
       const verdict = key === undefined ? undefined : verdicts.get(key);
       return verdict === undefined ? undefined : { verdict, checkedAt: checkedAt.get(key) };
     },
 
-    /** Wait for every in-flight probe so unload can drain cleanly. */
-    async idle() {
+    /**
+     * Wait for every in-flight probe.
+     *
+     * The owner must call this before aborting the plugin lifetime: aborting
+     * first cancels the probes, so a settled verdict is never logged.
+     */
+    async drained() {
       for (;;) {
         const pending = [...inflight.values()];
         if (pending.length === 0) return;

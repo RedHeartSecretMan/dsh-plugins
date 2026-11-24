@@ -74,7 +74,8 @@ function fixture({ snapshot, replies = [[{ type: 'text-delta', index: 0, text: t
     inject(services, callback) { if (services.every(service => ctx[service])) callback(ctx); },
     logger: { info() {}, warn() {}, debug() {} }, get() {},
     sessionTitle: { register(value) { provider = value; }, get() { return snapshot; } },
-    sessions: { get() {} }, sessionProjections: { stateOf() {} },
+    sessions: { get() {} }, sessionProjections: { stateOf() {}, register: async () => ({ dispose: async () => {} }) },
+    commands: { register: () => () => {} },
     llm: {
       async prepareCall(config, signal, select) {
         const controls = select ? select(config, { reasoning: { efforts: [{ id: 'low' }] } }) : config;
@@ -125,7 +126,13 @@ test('coordination delegates automatic naming while preserving explicit user ren
 });
 test('disabling AGENTS support skips coordination and working-directory lookup', async () => {
   const f = fixture();
-  f.ctx.inject = services => { assert.deepEqual(services, ['tools']); };
+  // The plugin now also registers a projection and a command; this spec is
+  // about AGENTS support, so it only refuses the unrelated lookups.
+  f.ctx.inject = services => { for (const service of services) {
+    if (service === 'tools') continue;
+    if (service === 'sessionProjections' || service === 'commands') continue;
+    throw new Error(`unexpected injection: ${service}`);
+  } };
   f.ctx.get = key => { if (key === 'workingDirectory') throw new Error('lookup should be disabled'); };
   try { assert.equal((await f.generate({ agentsInstructions: { enabled: false } })).title, title); }
   finally { await f.dispose(); }

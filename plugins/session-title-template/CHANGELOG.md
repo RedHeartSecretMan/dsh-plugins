@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-11-24
 
 - Retry failed title calls instead of giving up after one attempt. One round now walks every configured route (so a healthy `backfill.fallbackRoute` still wins immediately), and later rounds re-walk the set with exponential backoff; `retryAttempts` (default `3`) and `retryDelayMs` (default `500`) bound it. Input-budget failures stay single-shot because they repeat deterministically.
 - Record why a title call failed without persisting provider text: the diagnostic log now keeps `route=<provider>/<model> attempt=<n>/<total> <code>: <category>` instead of the bare `title-call-failed` label, so route, timeout, budget, stream and format failures can be distinguished without logging prompt, response or raw error text.
@@ -19,7 +19,29 @@
 - Normalize a delegation label with the same rules as model output, so a label ending in punctuation still yields a canonical title instead of one the parser would reject.
 - Probe every candidate route, not only the primary: a fallback endpoint can drop the instruction block just as the primary can.
 - Write structured records under the same cross-process lock as the human log.
-- 254 tests.
+
+### Added in 0.2.0
+
+- **A sidebar UI half, delivered in the same package.** `client.js` adds a session-menu group, a title-status icon at the end of each row, and a source section in the row's hover card. No new Remote method was needed: the Client reaches the Host through the framework's existing `ctx.remote.commands.execute` and `ctx.sessions.rename`, so a profile-installed plugin still resolves no package from the Harness archive.
+- **Title status reaches the Client as a projection.** `lib/projection.js` registers a `sessionTitleState` wire unit on `ctx.sessionProjections` with `summary: true`, so every Session list row carries the title, its source and its pin state. The Client reads it from `sessions.list` and never polls. The schemas are structural — the registry only calls `.parse()` — which avoids a `zod` dependency a profile-installed plugin cannot resolve.
+- **`/title` command** with `status`, `refresh`, `pin <title>` and `auto`. Commands are the in-session entry point and the Client's write path. Because the command executor resolves its agent through a lookup that only finds live agents, the menu hides `refresh`, `auto` and `status` for sessions nobody has opened and pins through `ctx.sessions.rename`, which resumes the session itself.
+- **`backfill_session_titles` tool**, opt-in with `backfill.enabled`. It previews by default (`dryRun` true) and refuses to write without the exact ids a person approved, so historical repair cannot be an implicit bulk rewrite.
+- **Six named generation stages** in `lib/title-runtime.js` replace the previous single closure: resolve context, decide plan, select input, resolve targets, compose prompt, call with retry. Each takes and returns plain objects, so a policy rule is tested by calling one stage instead of building a whole plugin context.
+- **`lib/title.js` split** into `title/text.js` (cleaning, CJK spacing, width, truncation), `title/format.js` (template, rendering, parsing) and `title/prompt.js` (instructions, framing, budget). The old module remains as a re-export shim for one release.
+- `scripts/verify-client.mjs` loads `client.js` the way the Web carrier does and checks the plugin shape, slot registrations, dictionary parity and one render of each component. `npm test` runs it, so a broken Client half fails before packaging.
+- 319 tests and 8 Client checks.
+
+### Fixed in 0.2.0
+
+- `role-probe` diagnostic records now carry the `sessionId` that was being named, so one session's verdict cannot explain another's status.
+- `MAX_UNKNOWN_ATTEMPTS`, `SUBSTANTIVE_MIN_CHARS`, `LOW_OVERLAP_RATIO`, `STATE_DIR_NAME`, `canonicalType` and `titleAnchor` are no longer exported: nothing outside their module consumed them.
+- Role-probe interface narrowed from `{ probe, status, detail, idle }` to `{ ensure, verdictOf, drained }`: `status` had no production consumer, and the two readers had drifted.
+
+### Documented in 0.2.0
+
+- README states three tools, not two, and lists `describe_current_session_title`.
+- `docs/VALIDATION.md` names every test file and no longer claims the read-only tool flushes and reads back.
+- `docs/DESIGN-0.2.0.md` records the design, the framework constraints it depends on, and what remains unverified.
 
 ## 0.1.3 — 2026-11-16
 

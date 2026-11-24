@@ -15,7 +15,7 @@ import { isAbsolute, join, normalize, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 /** Directory name owned by this plugin. */
-export const STATE_DIR_NAME = "session-title-template";
+const STATE_DIR_NAME = "session-title-template";
 
 const STATE_LOCK_WAIT_MS = 5_000;
 const LOG_LOCK_WAIT_MS = 200;

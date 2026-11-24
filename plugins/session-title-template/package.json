@@ -1,7 +1,7 @@
 {
   "name": "@redheartsecretman/session-title-template",
-  "version": "0.1.3",
-  "description": "Template-shaped session titles for DeepSeek Harness: a fixed [date][type] topic format with a controlled type vocabulary, CJK spacing, and optional backfill.",
+  "version": "0.2.0",
+  "description": "Template-shaped session titles for DeepSeek Harness: a fixed [date][type] topic format with a controlled type vocabulary, CJK spacing, optional backfill, and a sidebar UI for status and manual control.",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -24,6 +24,7 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
@@ -32,7 +33,9 @@
   },
   "files": [
     "index.js",
+    "client.js",
     "lib/*.js",
+    "lib/title/*.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
@@ -45,12 +48,20 @@
   ],
   "icon": "./icon.svg",
   "scripts": {
-    "test": "node --test \"test/*.test.js\"",
-    "check": "node --check index.js && node --check lib/title.js && node --check lib/refresh-policy.js && node --check lib/instructions.js && node --check lib/config.js && node --check lib/state.js && node --check lib/backfill.js && node --check lib/rename.js && node --check lib/title-plan.js && node --check lib/title-state.js && node --check lib/delegation.js && node --check lib/role-probe.js && node --check lib/stream-text.js && node --check lib/run.js && node --check lib/coordination.js && node --check scripts/verify-runtime.mjs && node --check test/verify-gateway.mjs"
+    "test": "node --test \"test/*.test.js\" && node scripts/verify-client.mjs",
+    "check": "node --check index.js && node --check client.js && node --check lib/title.js && node --check lib/title/text.js && node --check lib/title/format.js && node --check lib/title/prompt.js && node --check lib/title-runtime.js && node --check lib/refresh-policy.js && node --check lib/instructions.js && node --check lib/config.js && node --check lib/state.js && node --check lib/backfill.js && node --check lib/rename.js && node --check lib/title-plan.js && node --check lib/title-state.js && node --check lib/delegation.js && node --check lib/role-probe.js && node --check lib/stream-text.js && node --check lib/run.js && node --check lib/coordination.js && node --check lib/projection.js && node --check lib/commands.js && node --check lib/title-command.js && node --check lib/backfill-tool.js && node --check scripts/verify-runtime.mjs && node --check scripts/verify-client.mjs && node --check test/verify-gateway.mjs",
+    "verify:client": "node scripts/verify-client.mjs"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
     }
   },
   "engines": {

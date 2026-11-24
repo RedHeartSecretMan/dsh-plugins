@@ -1,6 +1,6 @@
 # session-title-template 验证范围与行为边界
 
-当前发布：`0.1.3`。验证环境包括已安装的 DSH `0.2.1-rc.3`、`0.2.2-rc.1` 与 `0.2.2-rc.2` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.1.3](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.1.3/session-title-template-0.1.3.tgz)。
+当前发布：`0.2.0`。验证环境包括已安装的 DSH `0.2.1-rc.3`、`0.2.2-rc.1` 与 `0.2.2-rc.2` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.2.0](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz)。
 
 ## 已验证的契约
 
@@ -23,13 +23,15 @@
 | AGENTS 预算与失败 | 仅命名片段进入最终 UTF-8 补充预算，优先保留更具体作用域；源读取有界、软超时；无规则、发现或读取失败沿用原有命名行为，并记录有界诊断类别 |
 | 命名归属 | 插件负责自动命名；补充指导不覆盖模板、创建日期、类型、长度和手动固定；主代理协调允许用户明确改名，`enabled: false` 同时关闭指导与协调 |
 | 辅助请求记录 | `session/title-llm-request` 的消息来源固定为 `dsh-session-title-llm`，与会话格式 v4 的 `titleSources` 校验一致；插件不迁移历史错误事件 |
-| 工具 | `rename_current_session` 只接收 title，`refresh_current_session_title` 与只读的 `describe_current_session_title` 不接收参数；拒绝跨会话目标、无 agent、失效会话与取消调用；均确认 flush 与读回 |
-| 历史维护 | 先只读检查；跳过手动标题、子代理、运行中及未结束轮次；只释放本次创建的句柄 |
+| 工具 | `rename_current_session` 只接收 title，`refresh_current_session_title` 与只读的 `describe_current_session_title` 不接收参数；拒绝跨会话目标、无 agent、失效会话与取消调用；两个写工具确认 flush 与读回，只读工具不写盘 |
+| 历史维护 | 预览与应用分离：`planBackfill` 只读列出候选，`applyBackfill` 只处理确认过的 id，并在应用时重新检查资格；跳过手动标题、子代理、运行中及未结束轮次；只释放本次创建的句柄。`backfill_session_titles` 工具默认只预览，缺 ids 时拒绝写入 |
 | 持久化 | 标题被接受并 flush 成功后才记完成；失败保留重试机会；跨进程并发更新不丢标记 |
 | 状态与卸载 | 结构化诊断写入 `diagnostics.jsonl`（有界、逐字段截断）； 按 profile 隔离；原子写入和有界锁等待；错误后队列可恢复；卸载取消定时器并等待维护退出 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-title-template`，插件 id 与包名一致；显示名称由 locale 提供为“会话标题模板”；发布包包含全部运行资源 |
 
-单元与回归测试共 254 项，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果，`npm run check` 对所有入口和脚本执行语法检查。
+单元与回归测试共 319 项，另加 8 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
+
+`scripts/verify-client.mjs` 按 Web carrier 的方式加载 `client.js`：用 React 替身执行模块注册，然后检查插件导出的 `inject`、三个 slot 注册、中英词典键集一致，以及每个组件的一次渲染。它验证形状与注册，不验证视觉呈现；真实 GUI 渲染仍需在本机核对。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。使用正式 profile resolver 加载自包含的 linked package，不依赖未声明的 Harness SDK peer。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
 
@@ -54,11 +56,35 @@
 
 ## 复现入口
 
+单元与回归测试共 24 个文件，全部由 `npm test` 运行：
+
 - [标题解析与格式测试](../test/title.test.js)
+- [标题生成阶段测试](../test/title-runtime.test.js)
+- [标题规划测试](../test/title-plan.test.js)
+- [子代理命名规划测试](../test/title-plan-delegation.test.js)
+- [状态快照测试](../test/title-state.test.js)
 - [配置测试](../test/config-regression.test.js)
+- [刷新策略测试](../test/refresh-policy.test.js)
 - [AGENTS 指令测试](../test/instructions.test.js)
+- [AGENTS 本地发现测试](../test/instructions-local.test.js)
+- [提示词指导测试](../test/guidance-prompt.test.js)
+- [模板后缀测试](../test/template-suffix.test.js)
 - [插件行为测试](../test/plugin.test.js)
+- [失败重试测试](../test/retry.test.js)
+- [角色探测测试](../test/role-probe.test.js)
+- [子代理标签测试](../test/delegation.test.js)
 - [改名工具测试](../test/rename.test.js)
+- [命令测试](../test/commands.test.js)
+- [命令语法与文案测试](../test/title-command.test.js)
+- [状态投影测试](../test/projection.test.js)
+- [历史维护测试](../test/backfill.test.js)
+- [历史维护预览测试](../test/backfill-plan.test.js)
+- [历史维护工具测试](../test/backfill-tool.test.js)
 - [状态测试](../test/state.test.js)
+- [结构化记录测试](../test/records.test.js)
+
+脚本与外部契约检查：
+
 - [安装版 SDK 验收](../scripts/verify-runtime.mjs)
+- [Client 半边验收](../scripts/verify-client.mjs)
 - [真实网关标题生成](../test/verify-gateway.mjs)

@@ -98,6 +98,7 @@ export function planTitle(context) {
     forced,
     recovery: needsRecovery(current, fallback, options),
     lastEvaluated,
+    maxProvisionalRefinements: context.maxProvisionalRefinements,
   });
   // A subagent names itself from the delegation label; every other session falls
   // back to the message-derived title and needs the model for a real title.

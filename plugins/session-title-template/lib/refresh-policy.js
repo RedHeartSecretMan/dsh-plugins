@@ -14,7 +14,7 @@
 import { cleanTitleText } from './title.js';
 
 /** Messages below this length are too thin to justify an evaluation. */
-export const SUBSTANTIVE_MIN_CHARS = 20;
+const SUBSTANTIVE_MIN_CHARS = 20;
 
 /** A periodic audit runs after this many human messages without an evaluation. */
 export const AUDIT_MESSAGE_COUNT = 6;
@@ -23,7 +23,7 @@ export const AUDIT_MESSAGE_COUNT = 6;
 export const AUDIT_TEXT_BYTES = 1500;
 
 /** Share of message tokens that must appear in the references for continuity. */
-export const LOW_OVERLAP_RATIO = 0.2;
+const LOW_OVERLAP_RATIO = 0.2;
 
 /**
  * Short acknowledgement, confirmation, and continuation messages. They never
@@ -156,6 +156,7 @@ export function decideTitleRefresh({
   forced = false,
   recovery = false,
   lastEvaluated,
+  maxProvisionalRefinements = 4,
 } = {}) {
   const answer = (refresh, reason) => ({ refresh, reason });
   if (forced) return answer(true, 'explicit');
@@ -176,7 +177,16 @@ export function decideTitleRefresh({
     if (periodic) return answer(true, 'periodic-audit');
     return answer(false, pending.every(item => isAcknowledgement(item.text)) ? 'acknowledgement' : 'not-substantive');
   }
-  if (provisional) return answer(true, 'provisional-refinement');
+  // A provisional title is a placeholder: it earns refinement only while the
+  // conversation is still young. Past the configured window the cheap rules take
+  // over, so a session stuck on 探索 stops paying for calls that keep answering
+  // "still provisional".
+  if (provisional) {
+    const seen = typeof lastEvaluated?.count === 'number' ? lastEvaluated.count : 0;
+    return pending.length + seen > maxProvisionalRefinements
+      ? answer(false, 'provisional-window-closed')
+      : answer(true, 'provisional-refinement');
+  }
   // The first evaluation after activation cannot rely on an overlap heuristic:
   // ask once, let the stability rules decide, then trust the cheap rules.
   if (!lastEvaluated) return answer(true, 'first-provider-title');

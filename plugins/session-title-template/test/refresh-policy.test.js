@@ -165,3 +165,24 @@ describe('decideTitleRefresh', () => {
     assert.equal(shouldRefreshTitle, decideTitleRefresh);
   });
 });
+
+describe('provisional refinement window', () => {
+  const current = { title: '[1124][探索] 排查标题', source: { kind: 'provider', model: { provider: 'p', model: 'm' } }, messageSeqs: [1] };
+  const many = [1, 2, 3, 4, 5, 6].map(seq => ({ seq, text: '继续处理这个会话标题插件的稳定性问题，补充足够长的实质内容。' }));
+
+  const few = many.slice(0, 3);
+
+  it('refines while the provisional title is still within its window', () => {
+    // Three messages sits inside the default four-message window.
+    assert.equal(decideTitleRefresh({
+      messages: few, current, canonical: true, provisional: true, maxProvisionalRefinements: 4,
+    }).refresh, true);
+  });
+
+  it('stops spending calls once the window has passed', () => {
+    // Six messages exceeds it: the placeholder has had its chance.
+    assert.equal(decideTitleRefresh({
+      messages: many, current, canonical: true, provisional: true, maxProvisionalRefinements: 4,
+    }).refresh, false);
+  });
+});

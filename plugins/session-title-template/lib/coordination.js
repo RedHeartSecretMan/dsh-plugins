@@ -1,7 +1,10 @@
 /** Register the current-session tools and the main-agent naming coordination. */
 import { registerDescribeTool, registerRenameTool } from './rename.js';
+import { registerBackfillTool } from './backfill-tool.js';
 
-export async function registerCoordination(ctx, { config, state, forcedRefreshes, lifetime, providerId, describe }) {
+export async function registerCoordination(ctx, {
+  config, state, forcedRefreshes, lifetime, providerId, describe, backfill,
+}) {
   const fibers = [];
   fibers.push(ctx.inject?.(['tools'], async (toolCtx) => {
     if (lifetime.signal.aborted) return;
@@ -12,6 +15,8 @@ export async function registerCoordination(ctx, { config, state, forcedRefreshes
       finally { forcedRefreshes.delete(id); }
     });
     if (describe !== undefined) registerDescribeTool(toolCtx, describe);
+    // Historical repair is opt-in by configuration, like the automatic pass.
+    if (backfill !== undefined && config.backfill.enabled) registerBackfillTool(toolCtx, backfill);
   }));
   if (config.agentsInstructions.enabled) {
     fibers.push(ctx.inject?.(['systemPrompt'], (promptCtx) => {
