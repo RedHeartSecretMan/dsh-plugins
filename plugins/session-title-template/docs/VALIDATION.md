@@ -35,6 +35,8 @@
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。使用正式 profile resolver 加载自包含的 linked package，不依赖未声明的 Harness SDK peer。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
 
+本项在 DSH `0.2.3-alpha.2` 上实测通过（退出码 0）。为让它跟上该版本，脚本修正了两处过时假设：`working-directory/change` 已更名为 `workspace-root/change`（`workingDirectory` 现在是 `workspace-root/change` 投影）；角色探针是独立的纯指令请求，不携带命名指导，因此调用计数与 AGENTS 标记断言只针对标题请求。运行方式：`npm run verify:runtime`。
+
 `test/verify-gateway.mjs` 是可选的真实网关检查，默认关闭；它需要 `RUN_SESSION_TITLE_LIVE=1`、网关地址和凭证，使用真实 `LlmRuntime`、`pi-ai` 适配器和真实标题服务生成一次标题，只校验格式、provider 和模型来源。2026-11-05 已对本地 Magpie 网关的 `auto/deepseek-flash` 实测通过；工具注册与提示词协调仍由 `verify-runtime.mjs` 覆盖，该 live 检查不进入 CI。
 
 实际启用状态应从当前 Host 的插件清单核对；安装命令成功本身不等于当前进程已经切换。

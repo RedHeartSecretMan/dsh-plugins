@@ -45,12 +45,17 @@ try {
   ctx.provide('fs', {});
   await ctx.plugin(WorkingDirectory, { defaultDirectory: original });
   ctx.provide('llm', { async prepareCall(config) { return { config, async *stream(options) {
-    calls++;
-    for (const marker of ['GlobalNamingMarker', 'SharedNamingMarker', 'ProjectNamingMarker']) assert.ok(options.system.includes(marker), marker);
-    assert.ok(options.system.indexOf('GlobalNamingMarker') < options.system.indexOf('SharedNamingMarker'));
-    assert.ok(options.system.indexOf('SharedNamingMarker') < options.system.indexOf('ProjectNamingMarker'));
-    assert.ok(!options.system.includes('ENGINEERING_MUST_NOT_APPEAR'));
-    assert.ok(!options.system.includes('WRONG_DIRECTORY_MUST_NOT_APPEAR'));
+    // The role probe is a separate, instruction-only request: it carries no
+    // naming guidance by design, so only title calls are counted and checked.
+    const probing = options.purpose === 'session-title-role-probe';
+    if (!probing) calls++;
+    if (!probing) {
+      for (const marker of ['GlobalNamingMarker', 'SharedNamingMarker', 'ProjectNamingMarker']) assert.ok(options.system.includes(marker), marker);
+      assert.ok(options.system.indexOf('GlobalNamingMarker') < options.system.indexOf('SharedNamingMarker'));
+      assert.ok(options.system.indexOf('SharedNamingMarker') < options.system.indexOf('ProjectNamingMarker'));
+      assert.ok(!options.system.includes('ENGINEERING_MUST_NOT_APPEAR'));
+      assert.ok(!options.system.includes('WRONG_DIRECTORY_MUST_NOT_APPEAR'));
+    }
     if (began) { began(); began = undefined; await new Promise(resolve => { release = resolve; }); }
     yield { type: 'text-delta', index: 0, text: '[0101][修复] 排查登录失败' };
     yield { type: 'finish', reason: { kind: 'stop' } };
@@ -69,7 +74,7 @@ try {
   await waitFor(async () => (await ctx.systemPrompt.assemble()).sections.some(section => section.name === owner), 'coordination section');
   const session = ctx.sessions.create('contract-fixture', { meta: { createdAt: Date.UTC(2026, 9, 24, 17, 30), cwd: original } });
   const other = ctx.sessions.create('untouched', { meta: { cwd: original } });
-  session.append('working-directory/change', { cwd });
+  session.append('workspace-root/change', { cwd });
   assert.equal(ctx.workingDirectory.get(session), cwd);
   session.append('user/message', { content: [{ type: 'text', text: '修复登录失败' }], source: { kind: 'user' } }, { surfaceOp: 'append' });
   const result = await ctx.sessionTitle.refresh(session);
@@ -113,7 +118,7 @@ try {
   assert.ok(!(await ctx.systemPrompt.assemble()).sections.some(section => section.name === owner));
   const recoveryPlugin = ctx.plugin(plugin, { topicMaxChars: 64 }); await recoveryPlugin;
   const recovery = ctx.sessions.create('recovery-fixture', { meta: { createdAt: Date.UTC(2026, 9, 24, 17, 30), cwd: original } });
-  recovery.append('working-directory/change', { cwd });
+  recovery.append('workspace-root/change', { cwd });
   recovery.append('user/message', { content: [{ type: 'text', text: '调查 Codex 模型降级路由以及上下文窗口和后台审批配置'.repeat(3) }], source: { kind: 'user' } }, { surfaceOp: 'append' });
   const fallback = await ctx.sessionTitle.refresh(recovery);
   assert.ok(Buffer.byteLength(fallback.title) <= 120);
