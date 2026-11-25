@@ -28,19 +28,30 @@ window.__ModuleLoader__.load({
     const HOVER_SLOT = 'sidebar.session.row.hover';
 
     /**
-     * Glyphs with no shipped equivalent, registered under this plugin's keys.
+     * Glyphs the host does not ship, registered under this plugin's keys.
      *
-     * The path data is copied verbatim from the host icon set (16px grid,
-     * 1.2 stroke), which is the documented way for a plugin to match host
-     * artwork without importing the primitives package — a profile-installed
-     * plugin cannot resolve it anyway.
+     * Path data is copied verbatim from the host icon set (16px grid,
+     * stroke-width 1) rather than importing the primitives package, which the
+     * practices guide forbids and a profile install cannot resolve anyway.
+     * Circles are kept as circles: reducing a glyph to its `<path>` children
+     * silently drops geometry.
      */
     const OWN_ICONS = {
+      // refresh: a full circular arrow, the conventional "regenerate".
       'session-title-template.refresh': [
-        'M14.5001 8C14.5 9.28552 14.1188 10.5422 13.4045 11.611C12.6903 12.6799 11.6752 13.5129 10.4875 14.0049C9.29982 14.4968 7.99295 14.6255 6.73212 14.3747C5.4713 14.124 4.31314 13.505 3.4041 12.596C2.49514 11.687 1.87614 10.5288 1.62537 9.26798C1.37459 8.00716 1.50331 6.70028 1.99525 5.51261C2.48719 4.32494 3.32025 3.30981 4.3891 2.59557C5.45795 1.88134 6.71458 1.50008 8.0001 1.5C9.9001 1.5 11.7001 2.3 13.0001 3.6L14.5001 5.1',
-        'M14.4999 1.5V5.1H10.8999',
+        { d: 'M14.5001 8C14.5 9.28552 14.1188 10.5422 13.4045 11.611C12.6903 12.6799 11.6752 13.5129 10.4875 14.0049C9.29982 14.4968 7.99295 14.6255 6.73212 14.3747C5.4713 14.124 4.31314 13.505 3.4041 12.596C2.49514 11.687 1.87614 10.5288 1.62537 9.26798C1.37459 8.00716 1.50331 6.70028 1.99525 5.51261C2.48719 4.32494 3.32025 3.30981 4.3891 2.59557C5.45795 1.88134 6.71458 1.50008 8.0001 1.5C9.9001 1.5 11.7001 2.3 13.0001 3.6L14.5001 5.1' },
+        { d: 'M14.4999 1.5V5.1H10.8999' },
       ],
-      'session-title-template.info': ['M8 7V11M8 4.5V5.5'],
+      // check in a circle: "the naming is in effect / all good".
+      'session-title-template.auto': [
+        { circle: [8, 8, 6.5] },
+        { d: 'M4.5 8L7 10.5L11.5 6' },
+      ],
+      // an eye: "view the status", read-only.
+      'session-title-template.status': [
+        { d: 'M1.5 8C3.36 4.41 5.52 2.63 8 2.63C10.48 2.63 12.64 4.41 14.5 8C12.64 11.59 10.48 13.37 8 13.37C5.52 13.37 3.36 11.59 1.5 8Z' },
+        { circle: [8, 8, 2.25] },
+      ],
     };
 
     /** Projection key this plugin registers on the Host. */
@@ -62,18 +73,47 @@ window.__ModuleLoader__.load({
     }
 
     /** Inline glyphs, drawn locally so no icon package is required. */
-    function glyph(path, size = 14) {
+    function glyph(parts, size = 16) {
+      // The host draws its regular set on a 16px grid at stroke-width 1 with
+      // non-scaling strokes; matching those three facts is what keeps a copied
+      // glyph optically identical to the shipped icons beside it.
       return h('svg', {
         viewBox: '0 0 16 16', width: size, height: size, fill: 'none',
-        stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round',
+        stroke: 'currentColor', strokeWidth: 1,
+        strokeLinecap: 'round', strokeLinejoin: 'round',
         'aria-hidden': true, style: { display: 'block', flex: 'none' },
-      }, ...path.map((d, index) => h('path', { key: index, d })));
+      }, ...parts.map((part, index) => (part.circle === undefined
+        ? h('path', { key: index, d: part.d })
+        : h('circle', { key: index, cx: part.circle[0], cy: part.circle[1], r: part.circle[2] }))));
     }
 
-    const PAINT = {
-      auto: { d: ['M2 8h3l2-4 2 8 2-4h3'], labelKey: 'icon.auto' },
-      pinned: { d: ['M4 2v7a3 3 0 0 0 6 0V2', 'M3 2h8', 'M3 14h10'], labelKey: 'icon.pinned' },
-      failed: { d: ['M8 2v7', 'M8 12.2v.1'], labelKey: 'icon.fallback' },
+    /**
+     * Row-status glyphs, reusing the host's own geometry.
+     *
+     * `sparkle` marks a title the plugin generated, the pin marks a title the
+     * user fixed, and the warning circle marks a deterministic fallback — the
+     * one state where the visible title is not a considered name yet.
+     */
+    const STATUS_GLYPH = {
+      auto: {
+        parts: [{ d: 'M8 1.5L9.4 5.6L13.5 7L9.4 8.4L8 12.5L6.6 8.4L2.5 7L6.6 5.6L8 1.5Z' }],
+        labelKey: 'icon.auto',
+      },
+      pinned: {
+        parts: [
+          { d: 'M9.96976 1.70572L13.1554 3.93629L10.9019 8.12317L11.5158 11.605L10.7192 12.7427L2.52767 7.00693L3.3243 5.86922L6.80612 5.25528L9.96976 1.70572Z' },
+          { d: 'M6.05285 9.47511C6.27284 9.16094 6.70586 9.08458 7.02003 9.30457C7.3342 9.52455 7.41055 9.95757 7.19057 10.2717L3.98587 14.4708L3.21223 13.9291L6.05285 9.47511Z' },
+        ],
+        labelKey: 'icon.pinned',
+      },
+      fallback: {
+        parts: [
+          { d: 'M8 14.5C11.5899 14.5 14.5 11.5899 14.5 8C14.5 4.41015 11.5899 1.5 8 1.5C4.41015 1.5 1.5 4.41015 1.5 8C1.5 11.5899 4.41015 14.5 8 14.5Z' },
+          { d: 'M8 4.29199V9.79199' },
+          { d: 'M8 10.708V11.708' },
+        ],
+        labelKey: 'icon.fallback',
+      },
     };
 
     /** The status icon for one row, or null when the Host has said nothing. */
@@ -85,19 +125,19 @@ window.__ModuleLoader__.load({
       if (state === undefined) return null;
       const kind = state.pinned === true ? 'pinned'
         : state.source === 'provider' ? 'auto'
-          : state.source === 'fallback' ? 'failed'
+          : state.source === 'fallback' ? 'fallback'
             : undefined;
       if (kind === undefined) return null;
-      const paint = PAINT[kind];
+      const paint = STATUS_GLYPH[kind];
       const label = t(paint.labelKey);
       return h('span', {
         title: label, role: 'img', 'aria-label': label,
         style: {
           display: 'inline-flex', alignItems: 'center',
-          color: kind === 'failed' ? 'var(--dsw-alias-state-warn-primary)' : 'var(--dsw-alias-label-tertiary)',
-          opacity: kind === 'auto' ? 0.65 : 1, marginInlineStart: 4,
+          color: kind === 'fallback' ? 'var(--dsw-alias-state-warn-primary)' : 'var(--dsw-alias-label-tertiary)',
+          opacity: kind === 'auto' ? 0.7 : 1, marginInlineStart: 4,
         },
-      }, glyph(paint.d));
+      }, glyph(paint.parts, 14));
     }
 
     /**
@@ -161,7 +201,7 @@ window.__ModuleLoader__.load({
           {
             id: 'title.auto',
             label: coldHint === undefined ? t('menu.auto') : `${t('menu.auto')}（${coldHint}）`,
-            icon: { key: 'workspace.markRead' },
+            icon: { key: 'session-title-template.auto' },
             disabled: !live,
             ...(live ? { run: () => runCommand('/title auto') } : {}),
             failureLabel: t('menu.autoFailed'),
@@ -169,7 +209,7 @@ window.__ModuleLoader__.load({
           {
             id: 'title.status',
             label: coldHint === undefined ? t('menu.status') : `${t('menu.status')}（${coldHint}）`,
-            icon: { key: 'session-title-template.info' },
+            icon: { key: 'session-title-template.status' },
             disabled: !live,
             ...(live ? { run: () => runCommand('/title status') } : {}),
             failureLabel: t('menu.statusFailed'),
@@ -198,11 +238,11 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.locale.register(NS, {
           zh: {
             'menu.title': '会话标题',
-            'menu.refresh': '重新生成标题',
-            'menu.pin': '固定当前标题',
-            'menu.auto': '恢复自动命名',
-            'menu.status': '查看命名状态',
-            'menu.needsOpen': '需先打开会话',
+            'menu.refresh': '重新生成',
+            'menu.pin': '固定当前',
+            'menu.auto': '恢复自动',
+            'menu.status': '查看状态',
+            'menu.needsOpen': '先打开会话',
             'menu.refreshFailed': '重新生成标题失败',
             'menu.autoFailed': '恢复自动命名失败',
             'menu.statusFailed': '读取命名状态失败',
@@ -223,11 +263,11 @@ window.__ModuleLoader__.load({
           },
           en: {
             'menu.title': 'Session title',
-            'menu.refresh': 'Regenerate title',
-            'menu.pin': 'Pin current title',
-            'menu.auto': 'Resume automatic naming',
-            'menu.status': 'Show naming status',
-            'menu.needsOpen': 'open the session first',
+            'menu.refresh': 'Regenerate',
+            'menu.pin': 'Pin current',
+            'menu.auto': 'Resume automatic',
+            'menu.status': 'View status',
+            'menu.needsOpen': 'open session first',
             'menu.refreshFailed': 'Could not regenerate the title',
             'menu.autoFailed': 'Could not resume automatic naming',
             'menu.statusFailed': 'Could not read the naming status',

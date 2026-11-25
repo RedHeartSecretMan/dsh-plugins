@@ -139,6 +139,16 @@ function expand(node) {
   return expand(node.type({ ...node.props, children: node.children }));
 }
 
+/** Flatten a rendered element tree into a list of every node. */
+function flatten(node, found = []) {
+  if (node === null || node === undefined) return found;
+  if (Array.isArray(node)) { for (const child of node) flatten(child, found); return found; }
+  if (typeof node !== 'object') return found;
+  found.push(node);
+  flatten(node.children, found);
+  return found;
+}
+
 /** Every element type a rendered tree uses, for shape assertions. */
 function findElement(node, predicate, found = []) {
   if (node === null || node === undefined) return found;
@@ -175,12 +185,12 @@ check('apply registers the row slots, the native menu, its icons and the diction
     if (typeof result !== 'function') throw new Error(`effect ${label ?? '(unlabelled)'} returned no disposer`);
   }
   const owners = registrations.map(entry => entry.options.name).sort();
-  const expected = ['contextMenu.icon', 'contextMenu.icon', 'sidebar.session.row.hover', 'sidebar.session.row.trailing'];
+  const expected = ['contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'sidebar.session.row.hover', 'sidebar.session.row.trailing'];
   if (JSON.stringify(owners) !== JSON.stringify(expected)) {
     throw new Error(`unexpected slots: ${JSON.stringify(owners)}`);
   }
   const iconKeys = registrations.filter(e => e.options.name === 'contextMenu.icon').map(e => e.options.key).sort();
-  if (JSON.stringify(iconKeys) !== JSON.stringify(['session-title-template.info', 'session-title-template.refresh'])) {
+  if (JSON.stringify(iconKeys) !== JSON.stringify(['session-title-template.auto', 'session-title-template.refresh', 'session-title-template.status'])) {
     throw new Error(`unexpected icon keys: ${JSON.stringify(iconKeys)}`);
   }
   // The menu is a native contextMenus contribution, not the legacy slot.
@@ -266,6 +276,37 @@ check('the live-only rows are disabled on a cold session and say why', async () 
   // Pinning resumes the session, so it stays available.
   if (byId['title.pin'].disabled === true) throw new Error('pin must stay available on a cold session');
   if (typeof byId['title.pin'].run !== 'function') throw new Error('pin must stay runnable');
+});
+
+check('every custom glyph draws its full geometry', async () => {
+  const { exported } = await loadClient();
+  const { ctx, registrations } = createContext();
+  exported.apply(ctx);
+  const icons = registrations.filter(entry => entry.options.name === 'contextMenu.icon');
+  if (icons.length === 0) throw new Error('no icon registrations');
+  for (const icon of icons) {
+    // Render through the module's own glyph helper by invoking the component.
+    const tree = expand(icon.component({}));
+    if (tree === null || typeof tree !== 'object') throw new Error(`${icon.options.key} rendered nothing`);
+    const drawn = flatten(tree).filter(node => node.type === 'path' || node.type === 'circle');
+    if (drawn.length === 0) throw new Error(`${icon.options.key} draws no geometry`);
+    // A glyph reduced to its paths loses every <circle>; the info icon shipped
+    // that way once and rendered as a single stroke.
+    if (icon.options.key === 'session-title-template.status' && !drawn.some(n => n.type === 'circle')) {
+      throw new Error('the status glyph lost its circle');
+    }
+    if (icon.options.key === 'session-title-template.auto' && !drawn.some(n => n.type === 'circle')) {
+      throw new Error('the auto glyph lost its circle');
+    }
+    for (const node of drawn) {
+      if (node.type === 'path' && (typeof node.props.d !== 'string' || node.props.d === '')) {
+        throw new Error(`${icon.options.key} has an empty path`);
+      }
+      if (node.type === 'circle' && (node.props.r === undefined || node.props.cx === undefined)) {
+        throw new Error(`${icon.options.key} has an incomplete circle`);
+      }
+    }
+  }
 });
 
 check('the hover section names the title source', async () => {

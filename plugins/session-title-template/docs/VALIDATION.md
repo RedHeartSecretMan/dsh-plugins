@@ -29,7 +29,7 @@
 | 状态与卸载 | 结构化诊断写入 `diagnostics.jsonl`（有界、逐字段截断）； 按 profile 隔离；原子写入和有界锁等待；错误后队列可恢复；卸载取消定时器并等待维护退出 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-title-template`，插件 id 与包名一致；显示名称由 locale 提供为“会话标题模板”；发布包包含全部运行资源 |
 
-单元与回归测试共 321 项，另加 9 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
+单元与回归测试共 321 项，另加 10 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
 
 `scripts/verify-client.mjs` 按 Web carrier 的方式加载 `client.js`：用 React 替身执行模块注册，然后检查插件导出的 `inject`、两个行 slot 与两个图标 key 的注册、原生 `contextMenus` 贡献（`target: 'session'` 与「会话标题 ›」四子项结构）、中英词典键集一致、固定标题走 Session 引用而非不存在的 `sessions.rename`、冷会话时三项被禁用并说明原因，以及每个组件的一次渲染。它验证形状与注册，不验证视觉呈现；真实 GUI 渲染仍需在本机核对。
 
