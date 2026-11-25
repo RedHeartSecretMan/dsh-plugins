@@ -6,7 +6,7 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 ## Install
 
-Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3`, `0.2.2-rc.1` and `0.2.2-rc.2` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
+Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3`, `0.2.2-rc.1`, `0.2.2-rc.2` and `0.2.3-alpha.2` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
 The package is `@redheartsecretman/session-title-template`, version `0.2.0`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
@@ -104,6 +104,19 @@ The provider handles `text-delta`, completed `block-end` text and terminal `fini
 
 Harness suppresses automatic updates to user-pinned titles. An **explicit UI refresh** intentionally unpins them. Backfill always skips user titles, even a configured retitle target. Auxiliary calls use the built-in `session/title-llm-request` record; diagnostic files contain only route, attempt, provider code and a bounded local failure category, never title, prompt, response or raw error text.
 
+## Sidebar UI and `/title` command
+
+![Session title template sidebar UI and status modal overview](docs/overview-en.png)
+
+The package includes a Web UI client half (`client.js`) and an in-session `/title` slash command:
+
+- **Row indicators & hover card**: Each session row displays a star-family icon derived from the `sessionTitleState` projection — free sparkle (`provider` automatic), corner-framed star (`user` manually pinned, distinct from Pin Session's pushpin), or dashed-ring star (`fallback` temporary title) — paired with a matching hover-card status section.
+- **`Session title ›` context submenu**:
+  - **Auto-generate**: Forces regeneration (and unpins a manual title) on an open session through an owner-only `POST /session-title-template/refresh` route (falling back to `/title refresh` before a Host reload), showing in-flight progress without appending command blocks into the conversation.
+  - **Pin current**: Pins the current title via `SessionFace.rename` (`ctx.sessions.using`), resuming a cold session when needed; disabled when the title is already pinned or absent.
+  - **View status**: Opens a localized `shell.overlay` modal showing the current title and badge, any unresolved failure with advice, built-in rules, contributing `AGENTS.md` supplements, and the role-probe verdict. Reads through an owner-only `GET /session-title-template/status` route for both live and persisted cold sessions without opening an agent or mutating the session log.
+- **`/title` command**: Inside any live conversation, run `/title` (or `/title status`), `/title refresh`, `/title pin <title>`, or `/title auto`.
+
 ## Explicit current-session tools
 
 When the Host tools service is available, the plugin registers three tools globally across agent presets: `rename_current_session`, `refresh_current_session_title` and the read-only `describe_current_session_title`. Disabling AGENTS guidance does not remove them. All three keep the default exclusive scheduling and normal Harness execution policy. With `backfill.enabled`, a fourth tool `backfill_session_titles` previews historical repairs and applies only the ids a person approved.
@@ -114,7 +127,7 @@ When the Host tools service is available, the plugin registers three tools globa
 
 Targets come only from `execution.agent.session`; no session id is accepted. Missing/stale agents and extra fields are rejected. Both write tools require flush and read-back; the read-only status tool writes nothing. If persistence fails, the error explains that memory may already have changed; retrying the same pinned title avoids duplicate rename events.
 
-The tested Harness provider request carries no automatic/explicit trigger. The plugin does not guess from event order or words in user messages. **Use `refresh_current_session_title` for a forced regeneration**: native GUI refresh can still retain an already summarized title under the automatic stability policy. Initial/fallback recovery is unaffected. A future SDK trigger discriminator can enable direct GUI-refresh support.
+The tested Harness provider request carries no automatic/explicit trigger. The plugin does not guess from event order or words in user messages. **Use `Session title › Auto-generate`, `/title refresh`, or `refresh_current_session_title` for a forced regeneration**: native GUI refresh can still retain an already summarized title under the automatic stability policy. Initial/fallback recovery is unaffected. A future SDK trigger discriminator can enable direct GUI-refresh support.
 
 Follow the Host reload outcome after upgrading; restart when required. Installing or editing the package does not prove an existing session has the new tools.
 

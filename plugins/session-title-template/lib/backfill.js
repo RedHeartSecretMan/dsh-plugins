@@ -66,6 +66,7 @@ async function inspect(ctx, { config, progress, titleOptions }, row) {
       currentTitle: typeof lastTitle?.title === 'string' ? lastTitle.title : undefined,
       ...(target === undefined ? {} : { hint: target.hint }),
     },
+    options,
   };
 }
 
@@ -111,10 +112,12 @@ export async function applyBackfill(ctx, { config, state, titleOptions, activeRe
   if (wanted.size === 0) return summary;
   const rows = await query.listSessions(signal);
   const progress = await state.read({ signal });
+  const matched = new Set();
   for (const row of rows) {
     signal?.throwIfAborted();
     const id = String(row.header.id);
     if (!wanted.has(id)) continue;
+    matched.add(id);
     // Re-check eligibility at apply time: a session can start running between
     // the preview and the confirmation.
     const result = await inspect(ctx, { config, progress, titleOptions }, row);
@@ -124,7 +127,7 @@ export async function applyBackfill(ctx, { config, state, titleOptions, activeRe
     }
     let handle;
     try {
-      const options = optionsFor(await query.readSession(id), config, titleOptions);
+      const { options } = result;
       let session = ctx.sessions.get(id);
       if (!session) {
         const route = config.backfill.fallbackRoute;
@@ -158,6 +161,9 @@ export async function applyBackfill(ctx, { config, state, titleOptions, activeRe
       // Only this pass owns this handle. Existing user agents are never disposed.
       if (handle) await handle.dispose();
     }
+  }
+  for (const id of wanted) {
+    if (!matched.has(id)) summary.failed.push({ id, reason: 'not-found' });
   }
   state.note(`backfill-complete updated=${summary.updated.length} failed=${summary.failed.length}`);
   return summary;

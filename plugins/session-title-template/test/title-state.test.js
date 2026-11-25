@@ -97,3 +97,33 @@ test('the snapshot degrades to empty sections when nothing is known', () => {
   assert.equal(state.lastFailure, null);
   assert.equal(state.probe, null);
 });
+
+test('a failure superseded by a newer provider title or successful evaluation is suppressed', () => {
+  const recoveredByTitle = describeTitleState(snapshot({
+    current: {
+      title: '[1125][修复] 排查构建超时',
+      source: { kind: 'provider', model: { provider: 'p', model: 'm' } },
+      messageSeqs: [1],
+      updatedAt: 2000,
+    },
+    records: [{ kind: 'title-call-failed', route: 'p/m', attempt: 1, category: 'timeout', at: 1000, sessionId: 'S1' }],
+  }));
+  assert.equal(recoveredByTitle.lastFailure, null);
+
+  const recoveredInMemory = describeTitleState(snapshot({
+    records: [{ kind: 'title-call-failed', route: 'p/m', attempt: 1, category: 'provider-failure', at: 1000, sessionId: 'S1' }],
+    lastSuccessAt: 1500,
+  }));
+  assert.equal(recoveredInMemory.lastFailure, null);
+
+  const newerFailure = describeTitleState(snapshot({
+    current: {
+      title: '[1125][修复] 旧标题',
+      source: { kind: 'provider', model: { provider: 'p', model: 'm' } },
+      messageSeqs: [1],
+      updatedAt: 1000,
+    },
+    records: [{ kind: 'title-call-failed', route: 'p/m', attempt: 1, category: 'timeout', at: 2000, sessionId: 'S1' }],
+  }));
+  assert.equal(newerFailure.lastFailure?.category, 'timeout');
+});

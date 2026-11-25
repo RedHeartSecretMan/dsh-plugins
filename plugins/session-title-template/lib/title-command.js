@@ -53,8 +53,34 @@ const FAILURE_ADVICE = {
   'input-budget': '输入超出 maxInputBytes 预算，可调大该值或缩短会话首条消息。',
   'stream-failure': '流式响应中断，检查端点连通性与稳定性。',
   'tool-output': '模型返回了工具调用而非标题文本，检查该端点是否被错误地当作标题模型。',
+  timeout: '标题请求超时，检查端点响应速度或适当调大 timeoutMs。',
+  'output-truncated': '模型输出被 maxOutputTokens 截断，请调大该值或关闭该端点的深度推理。',
   'provider-failure': '端点返回错误，检查 provider/model 配置、凭据与网络。',
 };
+
+/** Format a diagnostic timestamp in the configured time zone when valid. */
+function formatFailureTime(at, timezone) {
+  if (!Number.isFinite(at)) return undefined;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone || 'UTC',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(at));
+    const pick = type => parts.find(part => part.type === type)?.value ?? '';
+    const month = pick('month');
+    const day = pick('day');
+    const hour = pick('hour') === '24' ? '00' : pick('hour');
+    const minute = pick('minute');
+    if (month && day && hour && minute) return `${month}-${day} ${hour}:${minute}`;
+  } catch {
+    // Invalid time zone: omit formatted clock time rather than failing status rendering.
+  }
+  return undefined;
+}
 
 /**
  * Turn a failure category into advice a person can act on.
@@ -109,7 +135,9 @@ export function renderTitleStatus(snapshot) {
   if (lastFailure !== null && lastFailure !== undefined) {
     const where = typeof lastFailure.route === 'string' ? `，路由 ${lastFailure.route}` : '';
     const attempt = Number.isSafeInteger(lastFailure.attempt) ? `，第 ${lastFailure.attempt} 次尝试` : '';
-    lines.push(`最近失败：${lastFailure.category ?? '未知'}${where}${attempt}`);
+    const whenText = formatFailureTime(lastFailure.at, builtin.timezone);
+    const when = whenText === undefined ? '' : `，时间 ${whenText}`;
+    lines.push(`最近失败：${lastFailure.category ?? '未知'}${where}${attempt}${when}`);
     const advice = formatTitleFailure(lastFailure);
     if (advice !== undefined) lines.push(`  建议：${advice}`);
   }

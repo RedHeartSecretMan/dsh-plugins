@@ -30,10 +30,16 @@ export async function collectStreamText(stream, signal, { prefix = 'session-titl
     const index = chunk.index ?? 0;
     if (chunk.type === 'finish') { finish = chunk.reason; continue; }
     if (chunk.type === 'tool-call-delta' || (chunk.type === 'block-start' && chunk.blockType === 'tool-call')) {
-      throw new Error(`${prefix}: response must not contain tool calls`);
+      const error = new Error(`${prefix}: response must not contain tool calls`);
+      error.code = 'TITLE_TOOL_OUTPUT';
+      throw error;
     }
     if (chunk.type === 'block-end') {
-      if (chunk.block.type === 'tool-call') throw new Error(`${prefix}: response contains a tool call`);
+      if (chunk.block.type === 'tool-call') {
+        const error = new Error(`${prefix}: response contains a tool call`);
+        error.code = 'TITLE_TOOL_OUTPUT';
+        throw error;
+      }
       if (!blocks.get(index)?.closed) {
         blocks.set(index, { text: chunk.block.type === 'text' ? chunk.block.text : '', closed: true });
       }
@@ -43,6 +49,8 @@ export async function collectStreamText(stream, signal, { prefix = 'session-titl
   }
   signal.throwIfAborted();
   if (finish?.kind !== 'stop') {
+    // Keep the Harness failure code (for example SESSION_TITLE_TIMEOUT) so the
+    // status view can classify the incident without parsing provider text.
     const error = new Error(`${prefix}: unsuccessful terminal finish (${finish?.kind ?? 'missing'})`);
     error.code = finish?.failure?.code ?? 'TITLE_STREAM_FAILED';
     throw error;

@@ -126,11 +126,11 @@ test('coordination delegates automatic naming while preserving explicit user ren
 });
 test('disabling AGENTS support skips coordination and working-directory lookup', async () => {
   const f = fixture();
-  // The plugin now also registers a projection and a command; this spec is
-  // about AGENTS support, so it only refuses the unrelated lookups.
+  // The plugin also registers a projection, a command and a read-only status
+  // route; this spec is about AGENTS support, so it only refuses systemPrompt.
   f.ctx.inject = services => { for (const service of services) {
     if (service === 'tools') continue;
-    if (service === 'sessionProjections' || service === 'commands') continue;
+    if (service === 'sessionProjections' || service === 'commands' || service === 'webServer') continue;
     throw new Error(`unexpected injection: ${service}`);
   } };
   f.ctx.get = key => { if (key === 'workingDirectory') throw new Error('lookup should be disabled'); };
@@ -281,6 +281,61 @@ test('the current title anchors both the system prompt and the framed input', as
     const payload = JSON.parse(input.slice(input.indexOf('{')));
     assert.deepEqual(payload.currentTitle, current);
     assert.deepEqual(payload.messages.map(message => message.seq), [1, 3]);
+  } finally { await f.dispose(); }
+});
+
+test('read-only status routes inspect live sessions without createdAt and cold sessions via sessionQuery', async () => {
+  const f = fixture();
+  const routes = [];
+  const liveSession = { id: 'live-no-date', header: {} };
+  const coldEvents = [
+    { type: 'workspace-root/change', data: { cwd: scratch } },
+    { type: 'session/title', time: 5000, data: { title: '[1125][修复] 冷会话标题', source: { kind: 'provider' }, messageSeqs: [1] } },
+  ];
+  f.ctx.sessions = { get: id => (id === 'live-no-date' ? liveSession : undefined) };
+  f.ctx.sessionTitle = {
+    register() {},
+    get: session => (session === liveSession ? { title: '[1125][优化] 活会话标题', source: { kind: 'user' }, messageSeqs: [] } : undefined),
+  };
+  f.ctx.webServer = { register(route) { routes.push(route); return () => {}; } };
+  f.ctx.get = key => (key === 'sessionQuery'
+    ? { readSession: async id => (id === 'cold-1' ? { session: { id, cwd: scratch }, events: coldEvents } : (() => { throw new Error('ENOENT'); })()) }
+    : undefined);
+
+  let registeredProjection = false;
+  f.ctx.sessionProjections = {
+    stateOf() {},
+    register: async () => { registeredProjection = true; return { dispose: async () => {} }; },
+  };
+
+  try {
+    await apply(f.ctx, { roleProbe: { enabled: false }, agentsInstructions: { enabled: false } });
+    assert.equal(registeredProjection, true, 'sessionProjections.register should be awaited directly in apply');
+    const statusRoute = routes.find(r => r.path === '/session-title-template/status');
+    assert.ok(statusRoute);
+
+    const makeRes = () => {
+      let body = '';
+      return { statusCode: 0, setHeader() {}, end(c = '') { body += c; }, json() { return JSON.parse(body); } };
+    };
+    const owner = { principal: { kind: 'owner' } };
+
+    const resLive = makeRes();
+    await statusRoute.handler({ method: 'GET', url: '/session-title-template/status?sessionId=live-no-date' }, resLive, owner);
+    assert.equal(resLive.statusCode, 200);
+    assert.equal(resLive.json().live, true);
+    assert.equal(resLive.json().snapshot.title.value, '[1125][优化] 活会话标题');
+
+    const resCold = makeRes();
+    await statusRoute.handler({ method: 'GET', url: '/session-title-template/status?sessionId=cold-1' }, resCold, owner);
+    assert.equal(resCold.statusCode, 200);
+    assert.equal(resCold.json().live, false);
+    assert.equal(resCold.json().snapshot.title.value, '[1125][修复] 冷会话标题');
+
+    const resMissing = makeRes();
+    await statusRoute.handler({ method: 'GET', url: '/session-title-template/status?sessionId=no-such-session' }, resMissing, owner);
+    assert.equal(resMissing.statusCode, 404);
+    assert.equal(resMissing.json().code, 'session-not-found');
   } finally { await f.dispose(); }
 });
 

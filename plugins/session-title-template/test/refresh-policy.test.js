@@ -181,8 +181,26 @@ describe('provisional refinement window', () => {
 
   it('stops spending calls once the window has passed', () => {
     // Six messages exceeds it: the placeholder has had its chance.
-    assert.equal(decideTitleRefresh({
+    const decision = decideTitleRefresh({
       messages: many, current, canonical: true, provisional: true, maxProvisionalRefinements: 4,
-    }).refresh, false);
+    });
+    assert.deepEqual(decision, { refresh: false, reason: 'provisional-window-closed' });
+  });
+
+  it('hands over to low-overlap and periodic audit after the provisional window closes', () => {
+    const drifted = [
+      ...many.slice(0, 5),
+      { seq: 6, text: '帮我重构支付回调签名校验模块并补充单元测试与发布清单' },
+    ];
+    assert.deepEqual(decideTitleRefresh({
+      messages: drifted, current, canonical: true, provisional: true, maxProvisionalRefinements: 4,
+    }), { refresh: true, reason: 'low-overlap' });
+
+    const longSameTopic = [1, 2, 3, 4, 5, 6, 7].map(seq => ({
+      seq, text: '继续处理这个会话标题插件的稳定性问题，补充足够长的实质内容。',
+    }));
+    assert.deepEqual(decideTitleRefresh({
+      messages: longSameTopic, current, canonical: true, provisional: true, maxProvisionalRefinements: 4,
+    }), { refresh: true, reason: 'periodic-audit' });
   });
 });

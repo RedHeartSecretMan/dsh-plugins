@@ -9,7 +9,12 @@ export function resolveRoute(config, request, ctx) {
   const header = request.session.requestHeader?.()?.config;
   if (header?.provider && header.model) return { provider: header.provider, model: header.model };
   try {
-    const selection = ctx.sessionProjections.stateOf(request.session, 'modelSelection')?.lastUsed;
+    // `stateOf(session, key)` is deprecated on current Harness and logs one
+    // warning per key on every Host; the snapshot face is the supported read.
+    const projection = typeof ctx.sessionProjections?.snapshot === 'function'
+      ? ctx.sessionProjections.snapshot(request.session, ['modelSelection'])?.values?.modelSelection
+      : ctx.sessionProjections?.stateOf?.(request.session, 'modelSelection');
+    const selection = projection?.pending ?? projection?.lastUsed;
     if (selection?.provider && selection.model) return { provider: selection.provider, model: selection.model };
   } catch {
     // The optional modelSelection unit is not registered in every profile.
@@ -64,22 +69,27 @@ export function describeTitleFailure(error, attempt, attempts) {
     ? error.code : String(error?.name ?? 'Error');
   const code = rawCode.replace(/[^A-Za-z0-9_.-]/gu, '_').slice(0, 64) || 'Error';
   const message = String(error?.message ?? '');
+  // The Harness timeout helper and the local deadline both carry a code ending in
+  // TIMEOUT; tool-call rejections carry TITLE_TOOL_OUTPUT; a truncated reply
+  // (max-tokens) is an output the configured budget could not finish.
   const category = /input byte budget exceeded|no input fits the configured byte budget/u.test(message)
     ? 'input-budget'
     : /model output did not match the title template/u.test(message)
       ? 'invalid-title-format'
-      : /tool call|tool-calls/u.test(message)
+      : /TITLE_TOOL_OUTPUT/u.test(code) || /tool call|tool-calls/u.test(message)
         ? 'tool-output'
-        : /timed out|timeout/u.test(message)
+        : /TIMEOUT/u.test(code) || /timed out|timeout/u.test(message)
           ? 'timeout'
-          : /terminal finish|stream failed|missing/u.test(message)
-            ? 'stream-failure'
-            : 'provider-failure';
+          : /terminal finish \(max-tokens\)/u.test(message)
+            ? 'output-truncated'
+            : /terminal finish|stream failed|missing/u.test(message)
+              ? 'stream-failure'
+              : 'provider-failure';
   return { attempt, attempts, code, category, text: `attempt ${attempt}/${attempts} ${code}: ${category}` };
 }
 
 /**
- * Report whether another attempt can plausibly succeed.
+ * Report whether another attempt on the same route can plausibly succeed.
  *
  * Budget and selection failures repeat deterministically, so retrying them only
  * delays the fallback and spends the same work twice.
@@ -90,4 +100,21 @@ export function describeTitleFailure(error, attempt, attempts) {
 export function isRetryableTitleFailure(error) {
   const message = String(error?.message ?? '');
   return !/input byte budget exceeded|no input fits the configured byte budget/u.test(message);
+}
+
+/**
+ * Report whether the same route should be asked again after one unusable reply.
+ *
+ * A reply the parser rejects, or one the output budget truncated, is a property
+ * of the request on that model: asking the identical prompt again usually
+ * yields the identical result. The next configured route still gets its
+ * chance, and a later round may retry.
+ *
+ * @param error - rejection or thrown value from a title attempt.
+ * @returns `true` when this route deserves an immediate second request.
+ */
+export function isSameRouteRetryableTitleFailure(error) {
+  if (!isRetryableTitleFailure(error)) return false;
+  const message = String(error?.message ?? '');
+  return !/model output did not match the title template|terminal finish \(max-tokens\)/u.test(message);
 }

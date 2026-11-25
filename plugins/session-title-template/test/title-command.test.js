@@ -102,12 +102,27 @@ test('an empty title is described rather than printed as blank', () => {
 });
 
 test('every category "describeTitleFailure" can emit has advice', () => {
-  // These five are what lib/run.js actually produces; a missing key would fall
+  // These seven are what lib/run.js actually produces; a missing key would fall
   // back to a generic sentence and lose the actionable part.
   assert.match(formatTitleFailure({ category: 'invalid-title-format' }), /格式/u);
   assert.match(formatTitleFailure({ category: 'input-budget' }), /预算/u);
   assert.match(formatTitleFailure({ category: 'stream-failure' }), /流式|中断/u);
   assert.match(formatTitleFailure({ category: 'tool-output' }), /工具/u);
+  assert.match(formatTitleFailure({ category: 'timeout' }), /超时|timeoutMs/u);
+  assert.match(formatTitleFailure({ category: 'output-truncated' }), /截断|maxOutputTokens/u);
   assert.match(formatTitleFailure({ category: 'provider-failure' }), /端点|provider/u);
   assert.equal(formatTitleFailure(null), undefined);
+});
+
+test('a failure timestamp is rendered in the configured time zone when present', () => {
+  const text = renderTitleStatus({
+    summary: '内置规则',
+    builtin: { timezone: 'Asia/Shanghai' },
+    supplemental: { count: 0, sources: [] },
+    title: { value: '[1125][探索] 排查构建超时', source: 'fallback', pinned: false },
+    lastFailure: { category: 'timeout', route: 'p/m', attempt: 2, at: Date.UTC(2026, 10, 25, 1, 30) },
+    probe: null,
+  });
+  assert.match(text, /时间 11-25 09:30/u);
+  assert.match(text, /超时|timeoutMs/u);
 });

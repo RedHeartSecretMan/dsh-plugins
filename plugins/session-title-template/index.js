@@ -3,7 +3,7 @@ import { resolveConfig } from './lib/config.js';
 import { createStateStore, stateDirectory } from './lib/state.js';
 import { createInstructionReader } from './lib/instructions.js';
 import { applyBackfill, backfillTitles, planBackfill } from './lib/backfill.js';
-import { compileTitlePattern, formatDate } from './lib/title.js';
+import { compileTitlePattern } from './lib/title.js';
 import { createTitleRuntime } from './lib/title-runtime.js';
 import { describeTitleState } from './lib/title-state.js';
 import { resolveRoute } from './lib/run.js';
@@ -11,9 +11,13 @@ import { createRoleProbe } from './lib/role-probe.js';
 import { registerCoordination } from './lib/coordination.js';
 import { titleStateProjectionDefinition } from './lib/projection.js';
 import { registerTitleCommands } from './lib/commands.js';
+import { registerStatusRoute } from './lib/status-route.js';
 
 export const name = 'session-title-template';
 export const inject = ['sessionTitle', 'llm', 'sessions', 'sessionProjections'];
+
+/** Maximum grace time before aborting in-flight role probes during plugin dispose. */
+const DISPOSE_PROBE_GRACE_MS = 1500;
 
 export async function apply(ctx, rawConfig) {
   const config = resolveConfig(rawConfig);
@@ -22,8 +26,9 @@ export async function apply(ctx, rawConfig) {
   const state = createStateStore({ directory: stateDirectory({ ...process.env, ...(profileDirectory ? { DSH_PROFILE_DIR: profileDirectory } : {}) }) });
   const pattern = compileTitlePattern(config.template, config.types.map(type => type.key));
   const activeRetitles = new Map();
-  // Per-session watermark of the last model evaluation that actually ran.
+  // Bounded per-session bookkeeping for evaluation watermarks and last model success.
   const lastEvaluations = new Map();
+  const lastSuccesses = new Map();
   const readInstructions = config.agentsInstructions.enabled
     ? createInstructionReader({ onDiagnostic: reason => state.note(`agents-instructions-${reason}`) }) : undefined;
   const forcedRefreshes = new Set();
@@ -39,9 +44,18 @@ export async function apply(ctx, rawConfig) {
     }),
     signal: lifetime.signal,
   });
-  // One callback answers the whole status question, so the tool stays read-only.
+
+  // One shared explicit-refresh helper used by tools, `/title`, and the sidebar route.
+  const refreshSession = async (session, signal) => {
+    const id = String(session.id);
+    forcedRefreshes.add(id);
+    try { return await ctx.sessionTitle.refresh(session, signal); }
+    finally { forcedRefreshes.delete(id); }
+  };
+
+  // One callback answers the whole status question for a live session, read-only.
   const describeSession = async (session) => {
-    const date = formatDate(session.header?.createdAt, config.timezone, config.dateFormat);
+    const id = String(session.id);
     const guidance = readInstructions
       ? await readInstructions({ cwd: ctx.get?.('workingDirectory')?.get?.(session) ?? session.header?.cwd, maxBytes: config.agentsInstructions.maxBytes })
       : undefined;
@@ -52,9 +66,57 @@ export async function apply(ctx, rawConfig) {
       guidance,
       probe: route === undefined ? undefined : roleProbe.verdictOf(route),
       records: await state.recentRecords(),
-      sessionId: String(session.id),
+      sessionId: id,
+      lastSuccessAt: lastSuccesses.get(id),
     });
   };
+
+  // Read-only status fallback for unopened (cold) sessions via sessionQuery,
+  // avoiding agent resumption while still surfacing persisted title and rules.
+  const describeColdSession = async (sessionId) => {
+    const query = ctx.get?.('sessionQuery');
+    if (typeof query?.readSession !== 'function') return { unavailable: true };
+    let observed;
+    try {
+      observed = await query.readSession(sessionId);
+    } catch {
+      return { notFound: true };
+    }
+    if (!observed || !Array.isArray(observed.events)) return { notFound: true };
+    const titleEvent = observed.events.findLast(event => event?.type === 'session/title');
+    const current = titleEvent?.data
+      ? {
+        ...titleEvent.data,
+        ...(Number.isFinite(titleEvent.time) ? { updatedAt: titleEvent.time } : {}),
+      }
+      : undefined;
+    const workspaceRootEvent = observed.events.findLast(event => event?.type === 'workspace-root/change');
+    const cwd = typeof workspaceRootEvent?.data?.cwd === 'string'
+      ? workspaceRootEvent.data.cwd
+      : observed.session?.cwd;
+    const guidance = readInstructions
+      ? await readInstructions({ cwd, maxBytes: config.agentsInstructions.maxBytes })
+      : undefined;
+    const headerConfig = observed.events.findLast(event => event?.type === 'request/header')?.data?.config;
+    const route = config.provider !== undefined
+      ? { provider: config.provider, model: config.model }
+      : (headerConfig?.provider && headerConfig?.model
+        ? { provider: headerConfig.provider, model: headerConfig.model }
+        : config.backfill.fallbackRoute);
+    const id = String(sessionId);
+    return {
+      snapshot: describeTitleState({
+        config,
+        current,
+        guidance,
+        probe: route === undefined ? undefined : roleProbe.verdictOf(route),
+        records: await state.recentRecords(),
+        sessionId: id,
+        lastSuccessAt: lastSuccesses.get(id),
+      }),
+    };
+  };
+
   // Every field planning needs travels together: the fallback type builds the
   // pre-model title, and parse/format checks need pattern and vocabulary.
   const titleOptions = (date) => ({
@@ -76,7 +138,7 @@ export async function apply(ctx, rawConfig) {
     roleProbe,
     readInstructions,
     providerId: name,
-    bookkeeping: { forcedRefreshes, activeRetitles, lastEvaluations },
+    bookkeeping: { forcedRefreshes, activeRetitles, lastEvaluations, lastSuccesses },
   });
   await registerCoordination(ctx, {
     config,
@@ -99,39 +161,56 @@ export async function apply(ctx, rawConfig) {
     generate: runtime.generate,
   });
 
-  // The Client reads title state from this projection, which the Harness drives
-  // and ships to Session list rows; the plugin registers no Remote method.
-  // Registration may resolve late, so a failure here must not take the whole
-  // fiber down: a missing status icon is far better than no titles at all.
-  void ctx.inject?.(['sessionProjections'], async (projectionCtx) => {
-    if (lifetime.signal.aborted) return;
+  // `sessionProjections` is declared in top-level `inject`, so register and
+  // await directly here so initial session-list reads see `sessionTitleState`.
+  // A failure still degrades gracefully: a missing status icon is far better
+  // than losing automatic titles.
+  if (!lifetime.signal.aborted && typeof ctx.sessionProjections?.register === 'function') {
     try {
-      await projectionCtx.sessionProjections.register(titleStateProjectionDefinition);
+      await ctx.sessionProjections.register(titleStateProjectionDefinition);
     } catch {
       state.note('title-state-projection-failed');
     }
-  });
-  // `/title` is the in-session entry point and the Client's route to the Host.
+  }
+  // `/title` is the in-session entry point and fallback command path.
   void ctx.inject?.(['commands'], (commandCtx) => {
     if (lifetime.signal.aborted) return;
     registerTitleCommands(commandCtx, {
       state,
       describe: describeSession,
-      refresh: async (session, signal) => {
-        const id = String(session.id);
-        forcedRefreshes.add(id);
-        try { return await ctx.sessionTitle.refresh(session, signal); }
-        finally { forcedRefreshes.delete(id); }
-      },
+      refresh: refreshSession,
+    });
+  });
+
+  // Owner-only HTTP routes so the Client sidebar can inspect status (live or
+  // cold) and trigger title refreshes without appending `/title` command cards
+  // into the active conversation transcript.
+  void ctx.inject?.(['webServer'], (webCtx) => {
+    if (lifetime.signal.aborted) return;
+    registerStatusRoute(webCtx, {
+      describe: describeSession,
+      describeCold: describeColdSession,
+      refresh: refreshSession,
+      state,
     });
   });
 
   // Both delayed and active maintenance are owned by this plugin activation.
   ctx.effect(() => async () => {
-    // Drain detached probes first: aborting the lifetime would cancel them before
-    // their verdict reaches the diagnostic log.
-    await roleProbe.drained();
+    // Give fast in-flight probes a bounded grace window to log their verdict,
+    // then abort the lifetime so a hung endpoint cannot stall plugin unload.
+    const graceMs = Math.min(config.timeoutMs, DISPOSE_PROBE_GRACE_MS);
+    let graceTimer;
+    await Promise.race([
+      roleProbe.drained(),
+      new Promise((resolve) => {
+        graceTimer = setTimeout(resolve, graceMs);
+        graceTimer.unref?.();
+      }),
+    ]);
+    clearTimeout(graceTimer);
     lifetime.abort(new Error('session-title-template: plugin disposed'));
+    await roleProbe.drained().catch(() => {});
     clearTimeout(timer);
     await backfillRun;
     await state.idle();

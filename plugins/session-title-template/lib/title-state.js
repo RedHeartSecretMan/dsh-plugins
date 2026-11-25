@@ -26,6 +26,7 @@ function describeCurrentTitle(current) {
     source: kind,
     pinned: kind === 'user',
     citedSeqs: Array.isArray(current.messageSeqs) ? [...current.messageSeqs] : [],
+    ...(Number.isFinite(current.updatedAt) ? { updatedAt: current.updatedAt } : {}),
   };
 }
 
@@ -49,20 +50,27 @@ function describeSupplemental(guidance) {
 }
 
 /**
- * Pick the newest failure record for one session so the status view explains the
- * last incident without borrowing another session's trouble. Records without a
- * session id cannot be attributed and are ignored.
+ * Pick the newest unresolved failure record for one session so the status view
+ * explains the last incident without borrowing another session's trouble or
+ * haunting a session whose title has since succeeded. Records without a session
+ * id cannot be attributed and are ignored.
  *
  * @param records - Structured diagnostics, oldest first.
  * @param sessionId - Session the snapshot describes.
- * @returns Failure description, or null when this session has none.
+ * @param recovery - Current title snapshot and in-memory last success timestamp.
+ * @returns Failure description, or null when this session has no unresolved failure.
  */
-function describeLastFailure(records, sessionId) {
+function describeLastFailure(records, sessionId, { current, lastSuccessAt } = {}) {
   const failures = Array.isArray(records)
     ? records.filter(record => record?.kind === 'title-call-failed' && record.sessionId === sessionId)
     : [];
   const latest = failures.at(-1);
   if (latest === undefined) return null;
+  const providerUpdatedAt = current?.source?.kind === 'provider' && Number.isFinite(current.updatedAt)
+    ? current.updatedAt
+    : -Infinity;
+  const succeededAt = Math.max(providerUpdatedAt, Number.isFinite(lastSuccessAt) ? lastSuccessAt : -Infinity);
+  if (Number.isFinite(latest.at) && succeededAt >= latest.at) return null;
   return {
     category: latest.category,
     route: latest.route,
@@ -80,9 +88,10 @@ function describeLastFailure(records, sessionId) {
  * @param input.guidance - Instruction reader result, when guidance was read.
  * @param input.probe - Role probe verdict, when one was settled.
  * @param input.records - Structured diagnostics for this session.
+ * @param input.lastSuccessAt - Timestamp of the latest successful model evaluation for this session.
  * @returns Snapshot separating built-in rules, supplements, title and failures.
  */
-export function describeTitleState({ config, current, guidance, probe, records, sessionId } = {}) {
+export function describeTitleState({ config, current, guidance, probe, records, sessionId, lastSuccessAt } = {}) {
   const supplemental = describeSupplemental(guidance);
   return {
     builtin: {
@@ -98,7 +107,7 @@ export function describeTitleState({ config, current, guidance, probe, records, 
     supplemental: { count: supplemental.count, sources: supplemental.sources },
     summary: supplemental.summary,
     title: describeCurrentTitle(current),
-    lastFailure: describeLastFailure(records, sessionId),
+    lastFailure: describeLastFailure(records, sessionId, { current, lastSuccessAt }),
     probe: probe === undefined || probe === null ? null : { verdict: probe.verdict, checkedAt: probe.checkedAt },
   };
 }

@@ -17,7 +17,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { buildSystemPrompt, frameMessages, formatDate, parseModelTitle, selectContextMessages } from './title.js';
 import { planTitle } from './title-plan.js';
 import { readDelegationLabel } from './delegation.js';
-import { resolveRoute, titleCall, describeTitleFailure, isRetryableTitleFailure } from './run.js';
+import { resolveRoute, titleCall, describeTitleFailure, isRetryableTitleFailure, isSameRouteRetryableTitleFailure } from './run.js';
 
 /** Failure text shared with the previous implementation. */
 const MESSAGES = {
@@ -178,8 +178,10 @@ export function composePrompt(context, config, plan, selected, guidance) {
  *
  * One round walks every configured route, so a healthy fallback wins
  * immediately instead of waiting for the primary to fail out. Deterministic
- * failures (an unusable reply shape, an over-budget input) stop at once because
- * repeating them cannot change the outcome.
+ * failures (an over-budget input) stop at once because repeating them cannot
+ * change the outcome. A reply the parser rejects is not asked again from the
+ * same route in the same round — the same model tends to repeat the same
+ * malformed line — but the other configured routes still get their turn.
  *
  * @param options - Routes, prompt, context, config and collaborators.
  * @returns `{ title, messageSeqs, model }` or `{ keep: true }`.
@@ -192,8 +194,10 @@ export async function callWithRetry({
   for (const candidate of routes) void roleProbe.ensure(candidate, request).catch(() => {});
   let failure;
   let abandoned = false;
+  const skipRoutes = new Set();
   for (let attempt = 1; attempt <= config.retryAttempts && !abandoned; attempt += 1) {
     for (const target of routes) {
+      if (skipRoutes.has(target)) continue;
       try {
         const text = await titleCall({
           ctx, config, request, route: target, system: prompt.system, input: prompt.input, messageSeqs, signal, providerId,
@@ -215,9 +219,13 @@ export async function callWithRetry({
         state.note(`title-call-failed route=${routeLabel} ${detail.text}`);
         state.record({ kind: 'title-call-failed', route: routeLabel, attempt, category: detail.category, sessionId: context.sessionId });
         if (!isRetryableTitleFailure(error)) { abandoned = true; break; }
+        if (!isSameRouteRetryableTitleFailure(error)) skipRoutes.add(target);
       }
     }
     if (abandoned || attempt >= config.retryAttempts) break;
+    // A fresh round gives a skipped route a new chance only when the whole set
+    // failed; if every route was skipped, there is nothing left to try.
+    if (skipRoutes.size >= routes.length) break;
     try {
       await delay(Math.min(config.retryDelayMs * 2 ** (attempt - 1), 10_000), undefined, { signal });
     } catch {
@@ -227,6 +235,19 @@ export async function callWithRetry({
   throw failure;
 }
 
+/** Maximum number of per-session entries kept in process-local maps. */
+const SESSION_BOOKKEEPING_LIMIT = 500;
+
+/** Store one bounded LRU entry so long-running hosts never grow maps without bound. */
+function rememberBounded(map, key, value, limit = SESSION_BOOKKEEPING_LIMIT) {
+  map.delete(key);
+  map.set(key, value);
+  if (map.size > limit) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+}
+
 /**
  * Build the provider used by the session-title service.
  *
@@ -234,7 +255,7 @@ export async function callWithRetry({
  * @returns A provider object with one `generate` entry point.
  */
 export function createTitleRuntime({ config, pattern, ctx, state, signal: lifetime, roleProbe, readInstructions, providerId, bookkeeping }) {
-  const { forcedRefreshes, activeRetitles, lastEvaluations } = bookkeeping;
+  const { forcedRefreshes, activeRetitles, lastEvaluations, lastSuccesses = new Map() } = bookkeeping;
   const deps = { ctx, state, roleProbe, providerId };
 
   return {
@@ -276,10 +297,11 @@ export function createTitleRuntime({ config, pattern, ctx, state, signal: lifeti
       const outcome = await callWithRetry({
         routes: targets.routes, prompt, messageSeqs: input.messageSeqs, context, config, request, signal, deps,
       });
-      // Record the watermark only after the model actually answered: a failed
-      // call must stay pending, so the next human message retries it instead of
-      // being skipped as "already evaluated".
+      // Record the watermark and success timestamp only after the model actually
+      // answered: a failed call must stay pending, so the next human message
+      // retries it instead of being skipped as "already evaluated".
       recordEvaluation(context, lastEvaluations);
+      rememberBounded(lastSuccesses, context.sessionId, Date.now());
       if (outcome.keep) return keepCurrent(context);
       return { title: outcome.title, messageSeqs: input.messageSeqs, model: outcome.model };
     },
@@ -290,7 +312,7 @@ export function createTitleRuntime({ config, pattern, ctx, state, signal: lifeti
 function recordEvaluation(context, lastEvaluations) {
   const lastSeq = context.messages.reduce(
     (max, message) => (Number.isSafeInteger(message.seq) && message.seq > max ? message.seq : max), 0);
-  lastEvaluations.set(context.sessionId, { seq: lastSeq, count: context.messages.length });
+  rememberBounded(lastEvaluations, context.sessionId, { seq: lastSeq, count: context.messages.length });
 }
 
 /**

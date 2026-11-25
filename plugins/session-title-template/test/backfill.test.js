@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { backfillTitles } from '../lib/backfill.js';
+import { applyBackfill, backfillTitles } from '../lib/backfill.js';
 import { resolveConfig } from '../lib/config.js';
 import { compileTitlePattern } from '../lib/title.js';
 const createdAt = Date.UTC(2026, 9, 25, 0);
@@ -42,4 +42,14 @@ test('backfill cancellation stops before resuming or marking', async () => {
   const f = setup(); f.query.readSession = async () => { f.controller.abort(); return { session: { createdAt }, events: [] }; };
   await assert.rejects(backfillTitles(f.ctx, f.args), e => e.name === 'AbortError');
   assert.equal(f.counts().resumed, 0); assert.equal(f.counts().markers, 0);
+});
+test('applyBackfill reads each candidate once and reports missing session ids', async () => {
+  const f = setup();
+  let reads = 0;
+  const originalRead = f.query.readSession;
+  f.query.readSession = async (id) => { reads += 1; return originalRead(id); };
+  const result = await applyBackfill(f.ctx, f.args, ['s', 'missing-id']);
+  assert.equal(reads, 1, 'applyBackfill should reuse the session snapshot from inspect');
+  assert.deepEqual(result.updated, ['s']);
+  assert.deepEqual(result.failed, [{ id: 'missing-id', reason: 'not-found' }]);
 });

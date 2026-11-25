@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文 · [插件目录](../../README.zh-CN.md)
 
-为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 生成 `[日期][类型] 主题` 格式的标题。日期取自会话创建时间；类型、模板、时区和提示词语言都可配置。提供仅针对当前会话的改名和重新生成工具。
+为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 生成 `[日期][类型] 主题` 格式的标题。日期取自会话创建时间；类型、模板、时区和提示词语言都可配置。提供三个针对当前会话的工具（改名、重新生成、状态查询）、`/title` 命令以及侧栏 UI 状态展示与快捷操作。
 
 ```text
 [1025][修复] 排查登录超时
@@ -12,7 +12,7 @@
 
 ## 安装和兼容性
 
-需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3`、`0.2.2-rc.1` 与 `0.2.2-rc.2` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
+需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3`、`0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.3-alpha.2` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
 包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.2.0`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz)，或使用 CLI：
 
@@ -112,6 +112,19 @@ AGENTS 规则可以影响主题措辞和暂定标题细化，但不能覆盖配�
 
 DSH 会阻止普通自动请求覆盖手动标题。界面的**显式刷新**有意解除这个固定状态。历史回填即使指定了 `retitle` 也跳过手动标题。辅助模型请求记录到 DSH 内置的 `session/title-llm-request` 事件；诊断日志只记录路由、尝试轮次、provider 错误码和有界的本地失败类别，不写入标题、提示词、响应或原始错误文本。
 
+## 侧栏 UI 与 `/title` 命令
+
+![会话标题模板侧栏 UI 与状态弹窗全览](docs/overview-zh.png)
+
+本包同时交付 Web Client 半边（`client.js`）与会话内 `/title` 命令：
+
+- **行尾图标与悬停卡片**：基于 Host 注册的 `sessionTitleState` 投影，在会话行尾与悬停卡片中统一以星芒图标家族展示三种状态——自由星芒（自动生成）、四角框定星芒（手动固定，区别于置顶会话的图钉）、虚线圈星芒（临时回退）。
+- **「会话标题 ›」右键子菜单**：
+  - **自动生成**：对已打开会话强制重新生成并解除手动固定；优先走 owner 鉴权的 `POST /session-title-template/refresh` 路由（Host 未重载前自动回落到 `/title refresh`），带进行中提示与防重入，不向对话记录追加命令块。
+  - **固定当前**：通过 `ctx.sessions.using(..., ref => ref.binding.session.rename(...))` 固定当前标题，冷会话也会自动恢复并落盘；标题已固定或尚无标题时自动禁用。
+  - **查看状态**：打开与当前界面语言一致的 `shell.overlay` 模态框，展示当前标题与状态徽章、未恢复的最近失败与建议、内置规则、`AGENTS.md` 补充来源清单及探针结论；通过 owner 鉴权的只读 `GET /session-title-template/status` 路由同时支持活会话与冷会话，不恢复冷会话 Agent，也不修改会话日志。
+- **`/title` 命令**：在任意活会话中可直接输入 `/title`（或 `/title status`）、`/title refresh`、`/title pin <标题>`、`/title auto`。
+
 ## 明确改名与重新生成
 
 Host 在工具服务可用时向所有 agent preset 注册三个默认排他执行的工具（`rename_current_session`、`refresh_current_session_title`、只读的 `describe_current_session_title`）；关闭 `agentsInstructions` 不会关闭工具。开启 `backfill.enabled` 时另加 `backfill_session_titles`，它默认只预览：
@@ -124,7 +137,7 @@ Host 在工具服务可用时向所有 agent preset 注册三个默认排他执�
 
 目标只从 `execution.agent.session` 取得，不接受会话 id；拒绝无 agent、非 live session 和多余字段。两个写工具（rename 与 refresh）在 flush 成功并读回核对后报告已保存；只读的 `describe_current_session_title` 不写盘。落盘失败会明确说明内存可能已改变；同一个已固定标题的改名重试不重复写事件。工具走 Harness 正常执行策略，不声明只读或绕过权限。
 
-当前已验证的 Harness provider 请求不包含自动/手动刷新原因，所以不根据事件序号或用户文字猜测意图。**需要强制重新生成时使用 `refresh_current_session_title`**；内置 GUI refresh 仍可能被已总结标题的自动稳定性保护保留。首次/回退标题恢复不受此限制。后续 SDK 若提供明确触发原因，应再接入内置刷新。
+当前已验证的 Harness provider 请求不包含自动/手动刷新原因，所以不根据事件序号或用户文字猜测意图。**需要强制重新生成时使用「会话标题 › 自动生成」、`/title refresh` 或 `refresh_current_session_title`**；内置 GUI refresh 仍可能被已总结标题的自动稳定性保护保留。首次/回退标题恢复不受此限制。后续 SDK 若提供明确触发原因，应再接入内置刷新。
 
 升级后按 Host 的重载结果生效；现有进程要求重启时完整退出再打开。修改代码或安装包本身不代表当前会话工具列表已更新。
 

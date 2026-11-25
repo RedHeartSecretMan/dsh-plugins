@@ -177,19 +177,20 @@ export function decideTitleRefresh({
     if (periodic) return answer(true, 'periodic-audit');
     return answer(false, pending.every(item => isAcknowledgement(item.text)) ? 'acknowledgement' : 'not-substantive');
   }
-  // A provisional title is a placeholder: it earns refinement only while the
-  // conversation is still young. Past the configured window the cheap rules take
-  // over, so a session stuck on 探索 stops paying for calls that keep answering
-  // "still provisional".
+  // A provisional title is a placeholder: it earns eager refinement while the
+  // conversation is still young. Past the configured window the cheap continuity
+  // rules (low-overlap / periodic-audit) take over instead of freezing a
+  // provisional title more strictly than a settled one.
   if (provisional) {
-    const seen = typeof lastEvaluated?.count === 'number' ? lastEvaluated.count : 0;
-    return pending.length + seen > maxProvisionalRefinements
-      ? answer(false, 'provisional-window-closed')
-      : answer(true, 'provisional-refinement');
+    const eligibleCount = messages.filter(message => typeof message?.text === 'string' && message.text.trim().length > 0).length;
+    if (eligibleCount <= maxProvisionalRefinements) {
+      return answer(true, 'provisional-refinement');
+    }
+  } else if (!lastEvaluated) {
+    // The first evaluation after activation cannot rely on an overlap heuristic:
+    // ask once, let the stability rules decide, then trust the cheap rules.
+    return answer(true, 'first-provider-title');
   }
-  // The first evaluation after activation cannot rely on an overlap heuristic:
-  // ask once, let the stability rules decide, then trust the cheap rules.
-  if (!lastEvaluated) return answer(true, 'first-provider-title');
 
   const latest = substantive.at(-1);
   const recent = messages
@@ -198,7 +199,7 @@ export function decideTitleRefresh({
     .map(message => message.text);
   if (lexicalOverlap(latest.text, [current.title, ...recent]) < LOW_OVERLAP_RATIO) return answer(true, 'low-overlap');
   if (periodic) return answer(true, 'periodic-audit');
-  return answer(false, 'stable-title');
+  return answer(false, provisional ? 'provisional-window-closed' : 'stable-title');
 }
 
 /** Alias kept for callers that name the question rather than the decision. */

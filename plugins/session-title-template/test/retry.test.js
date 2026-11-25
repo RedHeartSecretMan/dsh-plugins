@@ -17,7 +17,7 @@ after(async () => {
 });
 
 const { apply } = await import('../index.js');
-const { describeTitleFailure, isRetryableTitleFailure } = await import('../lib/run.js');
+const { describeTitleFailure, isRetryableTitleFailure, isSameRouteRetryableTitleFailure, resolveRoute } = await import('../lib/run.js');
 
 const LOG_FILE = join(scratch, 'state', 'session-title-template', 'backfill.log');
 const title = '[1026][修复] 排查登录超时';
@@ -210,4 +210,57 @@ test('failure reporting exposes the category as a field, not a parsed suffix', a
   assert.equal(detail.code, 'E_X');
   assert.equal(detail.attempt, 2);
   assert.equal(detail.text, 'attempt 2/3 E_X: stream-failure');
+});
+
+test('a Harness timeout code is classified as timeout even when the provider message hides it', () => {
+  const timeout = Object.assign(new Error('request aborted'), { code: 'SESSION_TITLE_TIMEOUT' });
+  assert.equal(describeTitleFailure(timeout, 1, 3).category, 'timeout');
+  const tool = Object.assign(new Error('session-title-template: response contains a tool call'), { code: 'TITLE_TOOL_OUTPUT' });
+  assert.equal(describeTitleFailure(tool, 1, 3).category, 'tool-output');
+  const truncated = new Error('session-title-template: unsuccessful terminal finish (max-tokens)');
+  assert.equal(describeTitleFailure(truncated, 1, 3).category, 'output-truncated');
+});
+
+test('a format rejection or truncated output is not re-asked on the same route in one round', () => {
+  const badFormat = new Error('session-title-template: model output did not match the title template');
+  assert.equal(isRetryableTitleFailure(badFormat), true, 'the other route still gets a chance');
+  assert.equal(isSameRouteRetryableTitleFailure(badFormat), false, 'but the same model is not asked twice');
+  const truncated = new Error('session-title-template: unsuccessful terminal finish (max-tokens)');
+  assert.equal(isSameRouteRetryableTitleFailure(truncated), false);
+  const transport = Object.assign(new Error('route exploded'), { code: 'UPSTREAM_502' });
+  assert.equal(isSameRouteRetryableTitleFailure(transport), true, 'transient transport failures keep the route in play');
+  const budget = new Error('session-title-template: input byte budget exceeded');
+  assert.equal(isSameRouteRetryableTitleFailure(budget), false, 'deterministic failures stay non-retryable');
+});
+
+test('an unusable reply falls through to the backup route instead of repeating the same model', async () => {
+  const f = fixture({
+    snapshot: { title: '修复登录超时', source: { kind: 'fallback' }, messageSeqs: [1], eventSeq: 2 },
+    behaviours: ['sorry, I cannot format that', title],
+  });
+  try {
+    const result = await f.generate({
+      retryDelayMs: 0,
+      backfill: { fallbackRoute: { provider: 'backup', model: 'backup-model' } },
+      agentsInstructions: { enabled: false },
+    });
+    assert.equal(result.title, title);
+    assert.deepEqual(f.calls.map(call => call.provider), ['primary', 'backup'], 'the primary is not re-asked after a malformed reply');
+  } finally { await f.dispose(); }
+});
+
+test('route resolution prefers the supported snapshot face and honours a pending model switch', () => {
+  const session = { requestHeader: () => undefined };
+  const snapshotCtx = {
+    sessionProjections: {
+      snapshot: (_session, keys) => {
+        assert.deepEqual(keys, ['modelSelection']);
+        return { values: { modelSelection: { lastUsed: { provider: 'old', model: 'old-m' }, pending: { provider: 'new', model: 'new-m' } } } };
+      },
+    },
+  };
+  assert.deepEqual(resolveRoute({}, { session }, snapshotCtx), { provider: 'new', model: 'new-m' }, 'a pending selection is the route the user just chose');
+  const legacyCtx = { sessionProjections: { stateOf: () => ({ lastUsed: { provider: 'last', model: 'last-m' }, pending: null }) } };
+  assert.deepEqual(resolveRoute({}, { session }, legacyCtx), { provider: 'last', model: 'last-m' });
+  assert.deepEqual(resolveRoute({ backfill: { fallbackRoute: { provider: 'fb', model: 'fb-m' } } }, { session }, {}), { provider: 'fb', model: 'fb-m' });
 });

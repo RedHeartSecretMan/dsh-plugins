@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Session Title Template",
-    "description": "Names session titles automatically from a preset template."
+    "title": "Session title template",
+    "description": "Names session titles automatically in a configurable [date][type] topic template, with sidebar Session title menu actions, row status icons, a status modal, and the /title command."
   }
 }
