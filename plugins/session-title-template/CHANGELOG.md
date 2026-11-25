@@ -22,14 +22,15 @@
 
 ### Added in 0.2.0
 
-- **A sidebar UI half, delivered in the same package.** `client.js` adds a session-menu group, a title-status icon at the end of each row, and a source section in the row's hover card. No new Remote method was needed: the Client reaches the Host through the framework's existing `ctx.remote.commands.execute` and `ctx.sessions.rename`, so a profile-installed plugin still resolves no package from the Harness archive.
+- **A sidebar UI half, delivered in the same package.** `client.js` adds a native `会话标题 ›` submenu (four operations, host icon column, disabled rows explained), a title-status icon at the end of each row, and a source section in the row's hover card. No new Remote method was needed: the Client reaches the Host through the framework's existing `ctx.remote.commands.execute` and `ctx.sessions.rename`, so a profile-installed plugin still resolves no package from the Harness archive.
 - **Title status reaches the Client as a projection.** `lib/projection.js` registers a `sessionTitleState` wire unit on `ctx.sessionProjections` with `summary: true`, so every Session list row carries the title, its source and its pin state. The Client reads it from `sessions.list` and never polls. The schemas are structural — the registry only calls `.parse()` — which avoids a `zod` dependency a profile-installed plugin cannot resolve.
 - **`/title` command** with `status`, `refresh`, `pin <title>` and `auto`. Commands are the in-session entry point and the Client's write path. Because the command executor resolves its agent through a lookup that only finds live agents, the menu hides `refresh`, `auto` and `status` for sessions nobody has opened and pins through `ctx.sessions.rename`, which resumes the session itself.
 - **`backfill_session_titles` tool**, opt-in with `backfill.enabled`. It previews by default (`dryRun` true) and refuses to write without the exact ids a person approved, so historical repair cannot be an implicit bulk rewrite.
 - **Six named generation stages** in `lib/title-runtime.js` replace the previous single closure: resolve context, decide plan, select input, resolve targets, compose prompt, call with retry. Each takes and returns plain objects, so a policy rule is tested by calling one stage instead of building a whole plugin context.
 - **`lib/title.js` split** into `title/text.js` (cleaning, CJK spacing, width, truncation), `title/format.js` (template, rendering, parsing) and `title/prompt.js` (instructions, framing, budget). The old module remains as a re-export shim for one release.
-- `scripts/verify-client.mjs` loads `client.js` the way the Web carrier does and checks the plugin shape, slot registrations, dictionary parity and one render of each component. `npm test` runs it, so a broken Client half fails before packaging.
-- 319 tests and 8 Client checks.
+- Native menu rendering: the four operations are one `ctx.contextMenus` submenu rather than four rows in the legacy `sidebar.workspaces.session.menu.item` slot, which rendered them as bare text without the host row geometry, icon column or submenu behaviour. Two glyphs have no shipped equivalent and are registered under this plugin's keys, with path data copied from the host icon set.
+- `scripts/verify-client.mjs` loads `client.js` the way the Web carrier does and checks the plugin shape, slot and menu contributions, dictionary parity, the submenu structure, the pin path and the cold-session disabled state. `npm test` runs it, so a broken Client half fails before packaging.
+- 321 tests and 9 Client checks.
 
 ### Fixed in 0.2.0
 

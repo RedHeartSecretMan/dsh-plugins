@@ -63,6 +63,8 @@ function createContext() {
   const registrations = [];
   const dictionaries = [];
   const disposers = [];
+  const menus = [];
+  const notices = [];
   const ctx = {
     effect(setup, label) { const result = setup(); disposers.push({ result, label }); return result; },
     locale: {
@@ -80,10 +82,15 @@ function createContext() {
       using: async (_sessionId, _options, operation) => operation({
         binding: { session: { rename: async () => ({ ok: true, value: { title: 'x', seq: 1 } }) } },
       }),
+      retainInfo: () => ({ getSnapshot: () => ({ referenceCount: 1 }) }),
+    },
+    contextMenus: {
+      register(contribution) { menus.push(contribution); return () => {}; },
+      notify(text, success) { notices.push({ text, success }); },
     },
     remote: { commands: { execute: async () => ({ ok: true, value: undefined }) } },
   };
-  return { ctx, registrations, dictionaries, disposers };
+  return { ctx, registrations, dictionaries, disposers, menus, notices };
 }
 
 /** Collect every string the component tree would render. */
@@ -158,9 +165,9 @@ check('the exported plugin declares the services it uses', async () => {
   if (typeof exported.apply !== 'function') throw new Error('apply must be a function');
 });
 
-check('apply registers the three slots and the dictionaries', async () => {
+check('apply registers the row slots, the native menu, its icons and the dictionaries', async () => {
   const { exported } = await loadClient();
-  const { ctx, registrations, dictionaries, disposers } = createContext();
+  const { ctx, registrations, dictionaries, disposers, menus } = createContext();
   exported.apply(ctx);
   // Every resource is registered inside an effect, so unloading the plugin must
   // be able to run its cleanup.
@@ -168,10 +175,17 @@ check('apply registers the three slots and the dictionaries', async () => {
     if (typeof result !== 'function') throw new Error(`effect ${label ?? '(unlabelled)'} returned no disposer`);
   }
   const owners = registrations.map(entry => entry.options.name).sort();
-  const expected = ['sidebar.session.row.hover', 'sidebar.session.row.trailing', 'sidebar.workspaces.session.menu.item'];
+  const expected = ['contextMenu.icon', 'contextMenu.icon', 'sidebar.session.row.hover', 'sidebar.session.row.trailing'];
   if (JSON.stringify(owners) !== JSON.stringify(expected)) {
     throw new Error(`unexpected slots: ${JSON.stringify(owners)}`);
   }
+  const iconKeys = registrations.filter(e => e.options.name === 'contextMenu.icon').map(e => e.options.key).sort();
+  if (JSON.stringify(iconKeys) !== JSON.stringify(['session-title-template.info', 'session-title-template.refresh'])) {
+    throw new Error(`unexpected icon keys: ${JSON.stringify(iconKeys)}`);
+  }
+  // The menu is a native contextMenus contribution, not the legacy slot.
+  if (menus.length !== 1) throw new Error(`expected one native menu contribution, got ${menus.length}`);
+  if (menus[0].target !== 'session') throw new Error('the menu must target the session family');
   if (dictionaries.length !== 1) throw new Error('expected one locale registration');
   const { dicts } = dictionaries[0];
   const zhKeys = Object.keys(dicts.zh ?? {}).sort();
@@ -180,14 +194,21 @@ check('apply registers the three slots and the dictionaries', async () => {
   if (zhKeys.length === 0) throw new Error('dictionaries are empty');
 });
 
-check('the menu renders four localized actions', async () => {
+check('the menu is one native submenu holding the four operations', async () => {
   const { exported } = await loadClient();
-  const { ctx, registrations } = createContext();
+  const { ctx, menus } = createContext();
   exported.apply(ctx);
-  const menu = registrations.find(entry => entry.options.name === 'sidebar.workspaces.session.menu.item');
-  const text = textOf(render(menu, {}));
-  for (const key of ['menu.refresh', 'menu.pin', 'menu.auto', 'menu.status']) {
-    if (!text.includes(key)) throw new Error(`menu is missing ${key}`);
+  const actions = menus[0].resolve({ sessionId: 'S1', displayTitle: '[1124][修复] 修复登录超时' }, new AbortController().signal);
+  if (actions.length !== 1) throw new Error(`expected one top-level row, got ${actions.length}`);
+  const [group] = actions;
+  if (group.label !== 'menu.title') throw new Error(`top-level label should be menu.title, got ${group.label}`);
+  if (group.icon?.key === undefined) throw new Error('the group needs an icon key to occupy the icon column');
+  const ids = group.children.map(child => child.id);
+  const expected = ['title.refresh', 'title.pin', 'title.auto', 'title.status'];
+  if (JSON.stringify(ids) !== JSON.stringify(expected)) throw new Error(`unexpected children: ${JSON.stringify(ids)}`);
+  for (const child of group.children) {
+    if (child.icon?.key === undefined) throw new Error(`${child.id} has no icon key`);
+    if (typeof child.label !== 'string') throw new Error(`${child.id} has no label key`);
   }
 });
 
@@ -213,26 +234,38 @@ check('the trailing icon renders nothing when the Host projects no state', async
 
 check('pinning uses the Session reference path, not a phantom sessions.rename', async () => {
   const { exported } = await loadClient();
-  const { ctx, registrations } = createContext();
+  const { ctx, menus, notices } = createContext();
   exported.apply(ctx);
-  const menu = registrations.find(entry => entry.options.name === 'sidebar.workspaces.session.menu.item');
-  // Invoke the pin action the way a click would, and confirm it reached the
-  // reference-based rename (the only path that also works for a cold session).
-  // `apply` closes over the context it was given, so the recording rename is
-  // installed on that same object rather than passed as a prop.
   let renamed;
   ctx.sessions = {
+    ...ctx.sessions,
     using: async (_id, _options, operation) => operation({
       binding: { session: { rename: async title => { renamed = title; return { ok: true, value: { title, seq: 1 } }; } } },
     }),
   };
-  const tree = render(menu, {});
-  const buttons = findElement(tree, node => node.type === 'button');
-  const pin = buttons.find(button => String(textOf(button.children)).includes('menu.pin'));
-  if (pin === undefined) throw new Error('pin action not found in the menu');
-  await pin.props.onClick();
-  if (renamed === undefined) throw new Error('pin did not call the reference-based rename');
+  const [group] = menus[0].resolve({ sessionId: 'S1', displayTitle: '[1124][修复] 修复登录超时' }, new AbortController().signal);
+  const pin = group.children.find(child => child.id === 'title.pin');
+  await pin.run();
   if (renamed !== '[1124][修复] 修复登录超时') throw new Error(`pin sent the wrong title: ${renamed}`);
+  if (notices.length !== 1) throw new Error('pin must report its outcome through the menu notice');
+});
+
+check('the live-only rows are disabled on a cold session and say why', async () => {
+  const { exported } = await loadClient();
+  const { ctx, menus } = createContext();
+  exported.apply(ctx);
+  // A cold session reports no retained reference, which is what the menu reads.
+  ctx.sessions = { ...ctx.sessions, retainInfo: () => ({ getSnapshot: () => ({ referenceCount: 0 }) }) };
+  const [group] = menus[0].resolve({ sessionId: 'S1', displayTitle: 'x' }, new AbortController().signal);
+  const byId = Object.fromEntries(group.children.map(child => [child.id, child]));
+  for (const id of ['title.refresh', 'title.auto', 'title.status']) {
+    if (byId[id].disabled !== true) throw new Error(`${id} must be disabled on a cold session`);
+    if (byId[id].run !== undefined) throw new Error(`${id} must not expose a runnable action`);
+    if (!String(byId[id].label).includes('menu.needsOpen')) throw new Error(`${id} must explain why it is unavailable`);
+  }
+  // Pinning resumes the session, so it stays available.
+  if (byId['title.pin'].disabled === true) throw new Error('pin must stay available on a cold session');
+  if (typeof byId['title.pin'].run !== 'function') throw new Error('pin must stay runnable');
 });
 
 check('the hover section names the title source', async () => {

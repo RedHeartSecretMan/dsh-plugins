@@ -347,11 +347,15 @@ export async function applyBackfill(ctx, deps, ids) → { updated, failed }
 
 #### 3.4.2 三个 slot
 
-| slot | 内容 | 数据来源 |
+| 扩展点 | 内容 | 数据来源 |
 |---|---|---|
-| `sidebar.workspaces.session.menu.item` | 四项菜单 | 按会话状态分流，见下 |
-| `sidebar.session.row.trailing` | 状态图标（自动/锁/感叹号） | `projectionValues.sessionTitleState` |
-| `sidebar.session.row.hover` | 状态明细文本 | 同上；完整快照按需补 |
+| `ctx.contextMenus.register({ target: 'session' })` | 一个「会话标题 ›」二级菜单，内含四项 | 按会话状态分流，见下 |
+| `sidebar.session.row.trailing` | 状态图标（自动/锁/回退） | `projectionValues.sessionTitleState` |
+| `sidebar.session.row.hover` | 状态明细文本 | 同上 |
+
+**为什么菜单不用 `sidebar.workspaces.session.menu.item`**：那是 legacy slot，渲染的是裸 React 条目，拿不到原生的行高、图标槽、快捷键位、分隔线与二级菜单行为。实测把它放在原生「重命名」「在应用中打开」之间时，四项显示成纯文本按钮，字体与内边距都不对齐。原生通路是 `ctx.contextMenus.register()`，`MenuActionView` 支持 `children`（二级菜单）、`icon`、`disabled`、`separatorBefore`、`commandId`，与「在应用中打开 ›」同一套。
+
+**图标**：复用宿主已有的 `workspace.pin` / `workspace.markRead` / `workspace.rename` key；只有「重新生成」和「查看状态」没有对应原生图标，因此注册两个自有 key，其 path 数据从宿主图标集原样复制（16px 网格、1.2 描边），渲染时用同一套描边几何。不 require `@deepseek-ai/dsh-client-ui-primitives`——官方 `practices.md:35` 明确禁止，profile 安装也解析不到。
 
 菜单四项与**分流规则**：
 
