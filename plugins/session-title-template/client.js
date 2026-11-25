@@ -42,10 +42,21 @@ window.__ModuleLoader__.load({
         { d: 'M14.5001 8C14.5 9.28552 14.1188 10.5422 13.4045 11.611C12.6903 12.6799 11.6752 13.5129 10.4875 14.0049C9.29982 14.4968 7.99295 14.6255 6.73212 14.3747C5.4713 14.124 4.31314 13.505 3.4041 12.596C2.49514 11.687 1.87614 10.5288 1.62537 9.26798C1.37459 8.00716 1.50331 6.70028 1.99525 5.51261C2.48719 4.32494 3.32025 3.30981 4.3891 2.59557C5.45795 1.88134 6.71458 1.50008 8.0001 1.5C9.9001 1.5 11.7001 2.3 13.0001 3.6L14.5001 5.1' },
         { d: 'M14.4999 1.5V5.1H10.8999' },
       ],
-      // check in a circle: "the naming is in effect / all good".
+      // text lines: the title as a piece of text, distinct from the pencil that
+      // the built-in Rename row already uses one line above.
+      'session-title-template.title': [
+        { d: 'M2.3457 3.19299H13.6541' },
+        { d: 'M2.3457 7.46497H9.19332' },
+        { d: 'M2.3457 11.7369H6.4849' },
+        { d: 'M9.1936 7.46497H11.5183C12.6981 7.46497 13.6544 8.42132 13.6544 9.60103C13.6544 10.7808 12.6981 11.7371 11.5183 11.7371H9.1936' },
+        { d: 'M10.9505 9.7677L9.12262 11.5956C9.04452 11.6737 9.04452 11.8003 9.12262 11.8784L10.9505 13.7063' },
+      ],
+      // sparkle: "the plugin names this automatically", the host's own cue for
+      // generated content. A check mark read as "done", which was wrong here.
       'session-title-template.auto': [
-        { circle: [8, 8, 6.5] },
-        { d: 'M4.5 8L7 10.5L11.5 6' },
+        { d: 'M5.875 3C5.875 6.33333 7.54167 8 10.875 8C7.54167 8 5.875 9.66667 5.875 13C5.875 9.66667 4.20833 8 0.875 8C4.20833 8 5.875 6.33333 5.875 3Z' },
+        { d: 'M12.375 1.55823C12.375 3.39156 13.2917 4.30823 15.125 4.30823C13.2917 4.30823 12.375 5.22489 12.375 7.05823C12.375 5.22489 11.4583 4.30823 9.625 4.30823C11.4583 4.30823 12.375 3.39156 12.375 1.55823Z' },
+        { d: 'M12.375 10.4418C12.375 11.7751 13.0417 12.4418 14.375 12.4418C13.0417 12.4418 12.375 13.1084 12.375 14.4418C12.375 13.1084 11.7083 12.4418 10.375 12.4418C11.7083 12.4418 12.375 11.7751 12.375 10.4418Z' },
       ],
       // an eye: "view the status", read-only.
       'session-title-template.status': [
@@ -96,7 +107,7 @@ window.__ModuleLoader__.load({
      */
     const STATUS_GLYPH = {
       auto: {
-        parts: [{ d: 'M8 1.5L9.4 5.6L13.5 7L9.4 8.4L8 12.5L6.6 8.4L2.5 7L6.6 5.6L8 1.5Z' }],
+        parts: OWN_ICONS['session-title-template.auto'],
         labelKey: 'icon.auto',
       },
       pinned: {
@@ -179,7 +190,7 @@ window.__ModuleLoader__.load({
       return [{
         id: 'title',
         label: t('menu.title'),
-        icon: { key: 'workspace.rename' },
+        icon: { key: 'session-title-template.title' },
         // The submenu is always offered; individual rows carry the reason they
         // are unavailable, which is more discoverable than an empty menu.
         children: [

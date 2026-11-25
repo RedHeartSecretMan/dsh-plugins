@@ -185,12 +185,15 @@ check('apply registers the row slots, the native menu, its icons and the diction
     if (typeof result !== 'function') throw new Error(`effect ${label ?? '(unlabelled)'} returned no disposer`);
   }
   const owners = registrations.map(entry => entry.options.name).sort();
-  const expected = ['contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'sidebar.session.row.hover', 'sidebar.session.row.trailing'];
+  const expected = ['contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'sidebar.session.row.hover', 'sidebar.session.row.trailing'];
   if (JSON.stringify(owners) !== JSON.stringify(expected)) {
     throw new Error(`unexpected slots: ${JSON.stringify(owners)}`);
   }
   const iconKeys = registrations.filter(e => e.options.name === 'contextMenu.icon').map(e => e.options.key).sort();
-  if (JSON.stringify(iconKeys) !== JSON.stringify(['session-title-template.auto', 'session-title-template.refresh', 'session-title-template.status'])) {
+  if (JSON.stringify(iconKeys) !== JSON.stringify([
+    'session-title-template.auto', 'session-title-template.refresh',
+    'session-title-template.status', 'session-title-template.title',
+  ])) {
     throw new Error(`unexpected icon keys: ${JSON.stringify(iconKeys)}`);
   }
   // The menu is a native contextMenus contribution, not the legacy slot.
@@ -278,6 +281,22 @@ check('the live-only rows are disabled on a cold session and say why', async () 
   if (typeof byId['title.pin'].run !== 'function') throw new Error('pin must stay runnable');
 });
 
+check('the submenu parent does not reuse the built-in Rename icon', async () => {
+  const { exported } = await loadClient();
+  const { ctx, menus } = createContext();
+  exported.apply(ctx);
+  const [group] = menus[0].resolve({ sessionId: 'S1', displayTitle: 'x' }, new AbortController().signal);
+  // The built-in Rename row is drawn directly above this one and uses
+  // `workspace.rename`; sharing that key made the two rows look like the same
+  // command.
+  if (group.icon?.key === 'workspace.rename') {
+    throw new Error('the parent must not reuse the Rename pencil');
+  }
+  if (group.icon?.key !== 'session-title-template.title') {
+    throw new Error(`unexpected parent icon: ${group.icon?.key}`);
+  }
+});
+
 check('every custom glyph draws its full geometry', async () => {
   const { exported } = await loadClient();
   const { ctx, registrations } = createContext();
@@ -291,12 +310,10 @@ check('every custom glyph draws its full geometry', async () => {
     const drawn = flatten(tree).filter(node => node.type === 'path' || node.type === 'circle');
     if (drawn.length === 0) throw new Error(`${icon.options.key} draws no geometry`);
     // A glyph reduced to its paths loses every <circle>; the info icon shipped
-    // that way once and rendered as a single stroke.
+    // that way once and rendered as a single stroke. Only the eye glyph is
+    // built from a circle, so only it is asserted that way.
     if (icon.options.key === 'session-title-template.status' && !drawn.some(n => n.type === 'circle')) {
       throw new Error('the status glyph lost its circle');
-    }
-    if (icon.options.key === 'session-title-template.auto' && !drawn.some(n => n.type === 'circle')) {
-      throw new Error('the auto glyph lost its circle');
     }
     for (const node of drawn) {
       if (node.type === 'path' && (typeof node.props.d !== 'string' || node.props.d === '')) {
