@@ -10,7 +10,7 @@
  * @module session-title-template/title-plan
  */
 
-import { buildFallbackTitle, isFormattedTitle, isSettledTitle, normalizeTopic, renderTitle } from './title.js';
+import { buildFallbackTitle, isFormattedTitle, normalizeTopic, provisionalRefinementLimit, renderTitle } from './title.js';
 import { decideTitleRefresh } from './refresh-policy.js';
 
 /**
@@ -25,6 +25,7 @@ function fallbackTitle(options, sourceText) {
     date: options.date,
     template: options.template,
     fallbackType: options.fallbackType,
+    fallbackTruncation: options.fallbackTruncation,
     sourceText,
     cjkSpacing: options.cjkSpacing,
     topicMaxChars: options.topicMaxChars,
@@ -90,21 +91,27 @@ export function planTitle(context) {
   const forced = targeted || explicitRefresh;
   const fallback = fallbackTitle(options, messages[0].text);
   const canonical = current === undefined ? false : isFormattedTitle(current.title, options);
+  const provisionalLimit = canonical && current !== undefined
+    ? provisionalRefinementLimit(current.title, options, context.maxProvisionalRefinements)
+    : undefined;
   const decision = decideTitleRefresh({
     messages,
     current,
     canonical,
-    provisional: canonical && current !== undefined && !isSettledTitle(current.title, options),
+    provisional: provisionalLimit !== undefined,
     forced,
     recovery: needsRecovery(current, fallback, options),
     lastEvaluated,
-    maxProvisionalRefinements: context.maxProvisionalRefinements,
+    maxProvisionalRefinements: provisionalLimit ?? context.maxProvisionalRefinements,
   });
-  // A subagent names itself from the delegation label; every other session falls
-  // back to the message-derived title and needs the model for a real title.
+  // A subagent names itself from the delegation label when enabled; every other
+  // session (or a subagent configured to skip turn-1 label output) falls back to
+  // the message-derived title and calls the model for a real title.
   // Delegation identity is decided by the caller from the session header; a label
   // alone never implies a subagent, because a fork can carry an inherited one.
-  const delegated = context.isSubagent === true ? delegationTitle(context.delegationLabel, options) : undefined;
+  const delegated = context.isSubagent === true && context.useDelegationLabel !== false
+    ? delegationTitle(context.delegationLabel, options)
+    : undefined;
   return {
     refresh: decision.refresh,
     reason: decision.reason,

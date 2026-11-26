@@ -71,6 +71,12 @@ const ASCII_TOKEN = /(?:@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)/gu;
 const TECH_TERMS = /重命名|持久化|状态机|工作区|重定向|校验和|排查|网关|超时|文档|优化|缓存|插件|路由|配置|适配|构建|降级|回退|兜底|并发|异步|阻塞|死锁|泄漏|越界|截断|索引|同步|机制/gu;
 
 /**
+ * Whole-token sentence-ending punctuation. Prefer stopping at a completed
+ * sentence before falling back to a parallel clause or mid-sentence cut.
+ */
+const SENTENCE_SEPARATOR_TOKENS = new Set(["。", "！", "？", "!", "?"]);
+
+/**
  * Whole-token coordinating separators. Matching compares a segmented token with
  * one of these, so a compound word containing the same character (`合并`,
  * `并发`, `涉及`) is never mistaken for a conjunction.
@@ -84,8 +90,8 @@ const CLAUSE_SEPARATOR_TOKENS = new Set(["与", "和", "及", "并", "以及", "
  */
 const DANGLING_TOKENS = new Set(["与", "和", "及", "或", "并", "的", "之", "在", "对", "把", "将", "向", "从"]);
 
-/** Bare connector punctuation, such as a trailing `-` or `:` left by a cut. */
-const CONNECTOR_PUNCTUATION = /^[-/_:]+$/u;
+/** Bare connector or clause punctuation left dangling by a cut. */
+const CONNECTOR_PUNCTUATION = /^[-/_:,;，、；：。！？!?]+$/u;
 
 /** Half-width ASCII counts as 0.5 CJK width; full-width / Han characters count as 1. */
 function charWeight(character) {
@@ -181,6 +187,26 @@ function sliceByWeight(value, limit) {
  * @param limit - Maximum CJK-equivalent width (`topicMaxChars`).
  * @returns The truncated topic.
  */
+export function hardTruncateTopic(value, limit) {
+  if (!value || !(limit > 0)) return value;
+  const units = tokenizeTopicUnits(value);
+  if (measureUnits(units) <= limit) return value;
+  const kept = [];
+  let used = 0;
+  for (const unit of units) {
+    if (used + unit.weight > limit) {
+      if (kept.length === 0 && unit.weight > 0) {
+        const partial = sliceByWeight(unit.text, limit);
+        if (partial) kept.push({ text: partial, weight: measureTopicWidth(partial) });
+      }
+      break;
+    }
+    kept.push(unit);
+    used += unit.weight;
+  }
+  return trimTrailingWhiteSpace(kept).map((unit) => unit.text).join('').trim();
+}
+
 export function truncateTopic(value, limit) {
   if (!value || !(limit > 0)) return value;
   const units = tokenizeTopicUnits(value);
@@ -219,18 +245,40 @@ export function truncateTopic(value, limit) {
     }
   }
 
-  // If truncation cut into a second parallel clause, fall back to the completed
-  // first clause instead of keeping a phrase whose object is missing.
+  // Prefer stopping at a completed sentence inside the budget before falling
+  // back to a parallel clause or mid-sentence word boundary.
   let result = trimTrailingWhiteSpace(kept);
   const minClauseWidth = Math.min(6, Math.max(2, Math.floor(limit * 0.4)));
-  let completedPrefix;
+  let completedSentence;
   for (let index = 0; index < result.length; index += 1) {
-    if (!CLAUSE_SEPARATOR_TOKENS.has(result[index].text)) continue;
-    const prefix = trimTrailingWhiteSpace(result.slice(0, index));
-    const suffix = trimTrailingWhiteSpace(result.slice(index + 1));
-    if (measureUnits(prefix) >= minClauseWidth && measureUnits(suffix) <= 6) completedPrefix = prefix;
+    const unit = result[index];
+    const isSymbolSentenceEnd = SENTENCE_SEPARATOR_TOKENS.has(unit.text);
+    const isAsciiSentenceEnd = !isSymbolSentenceEnd
+      && /^[A-Za-z0-9_-]*[A-Za-z]\.$/u.test(unit.text)
+      && (index + 1 >= result.length || result[index + 1].weight === 0);
+    if (!isSymbolSentenceEnd && !isAsciiSentenceEnd) continue;
+    const prefix = isAsciiSentenceEnd
+      ? trimTrailingWhiteSpace([
+        ...result.slice(0, index),
+        { text: unit.text.slice(0, -1), weight: Math.max(0, unit.weight - 0.5) },
+      ])
+      : trimTrailingWhiteSpace(result.slice(0, index));
+    if (measureUnits(prefix) >= minClauseWidth) completedSentence = prefix;
   }
-  if (completedPrefix) result = completedPrefix;
+  if (completedSentence) {
+    result = completedSentence;
+  } else {
+    // If truncation cut into a second parallel clause, fall back to the completed
+    // first clause instead of keeping a phrase whose object is missing.
+    let completedPrefix;
+    for (let index = 0; index < result.length; index += 1) {
+      if (!CLAUSE_SEPARATOR_TOKENS.has(result[index].text)) continue;
+      const prefix = trimTrailingWhiteSpace(result.slice(0, index));
+      const suffix = trimTrailingWhiteSpace(result.slice(index + 1));
+      if (measureUnits(prefix) >= minClauseWidth && measureUnits(suffix) <= 6) completedPrefix = prefix;
+    }
+    if (completedPrefix) result = completedPrefix;
+  }
 
   // A conjunction or particle left at the very end means the next word was cut
   // away; drop it as long as a usable topic remains.

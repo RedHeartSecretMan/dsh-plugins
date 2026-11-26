@@ -15,6 +15,7 @@
 | 子代理命名 | 仅当会话自身 origin 为 subagent 时读取 `subagent/descriptor` 的 label；fork 种子里继承的 descriptor 被忽略；label 按与模型输出相同的规范化规则渲染；label 缺失回落到消息来源 |
 | 标题状态快照 | 一次查询返回内置规则、补充来源数量与清单、当前标题来源与固定状态、未恢复的最近失败类别（含 `timeout`、`output-truncated` 等全部 7 类建议与时间）、探针结论；内置与补充分离，不包含 provider 原文，且在更晚的成功生成后自动消除过时告警 |
 | 角色能力探测 | 每个候选路由（含 fallbackRoute）各探测；每个 provider/model 至多一次成功判定；传输失败最多尝试 3 次后保持未判定；精确 token 匹配判为 supported，答非所问判为 unsupported；超时、取消和传输失败保持未判定；只写诊断日志，不改路由、不改 profile；卸载等待有界宽限期 |
+| 命名设置路由 | owner 鉴权的 `GET`/`POST /session-title-template/settings`：仅接受扁平白名单字段，保存前用 `resolveConfig` 校验，经 `configEditor.edit(ctx.fiber.entry, …)` 持久化，不直接改写 `cordis.patch.yml`；无有效变化时不写盘，保存中拒绝并发保存，被高层覆盖或无法寻址的条目分别返回 `config-overridden` / `editor-unavailable`，错误不泄漏异常正文 |
 | HTTP 状态与刷新路由 | owner 鉴权的 `GET /session-title-template/status`（同时支持活会话与经 `sessionQuery` 只读的冷会话）与 `POST /session-title-template/refresh`（活会话无痕刷新），不向对话流追加命令块，错误分类返回且不泄漏异常正文 |
 | 失败诊断 | `title-call-failed` 只记录 `route`、`attempt n/总数`、provider 错误码和本地失败类别；不写标题、提示词、响应或原始错误文本 |
 | 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含 currentTitle anchor、转义和包装；优先保留首条和最新消息 |
@@ -30,9 +31,9 @@
 | 状态与卸载 | 结构化诊断写入 `diagnostics.jsonl`（有界、逐字段截断）； 按 profile 隔离；原子写入和有界锁等待；错误后队列可恢复；卸载取消定时器并等待维护退出 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-title-template`，插件 id 与包名一致；显示名称由 locale 提供为“会话标题模板”；发布包包含全部运行资源 |
 
-单元与回归测试共 336 项，另加 20 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、只读状态与无痕刷新路由、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
+单元与回归测试共 356 项，另加 30 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、只读状态与无痕刷新路由、命名设置与零依赖 YAML 读写、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
 
-`scripts/verify-client.mjs` 按 Web carrier 的方式加载 `client.js`：用 React 替身执行模块注册，然后检查插件导出的 `inject`、行尾/悬浮/弹窗三个 UI slot 与四个自有图标 key 的注册、原生 `contextMenus` 贡献（含 `observe` 响应订阅、`target: 'session'` 与「会话标题 ›」三子项结构）、中英词典键集一致、固定标题走 Session 引用而非不存在的 `sessions.rename` 且在已固定或尚无标题时禁用、固定当前与行尾已固定图标共用四角框定星芒图标而非复用置顶会话的图钉、悬浮窗使用 hovercard 语义色 token 且空状态不渲染、点击查看状态优先走只读 HTTP 路由直接消费结构化 `snapshot`（支持冷会话与英文全量本地化，结构化错误不误回落，切页或关闭时中止在飞请求，回落文本解析器不误判以 `来源：` 开头的标题）、点击自动生成优先走无痕 `POST` 刷新路由并直接提示详细结果与错误，以及每个组件的一次渲染。它验证形状与注册，不验证视觉呈现；真实 GUI 渲染仍需在本机核对。
+`scripts/verify-client.mjs` 按 Web carrier 的方式加载 `client.js`：用 React 替身执行模块注册，然后检查插件导出的 `inject`、行尾/悬浮/弹窗与插件详情配置（`plugins.bundle.config`）四个 UI slot 与五个自有图标 key 的注册、原生 `contextMenus` 贡献（含 `observe` 响应订阅、`target: 'session'` 与「会话标题 ›」四子项结构）、中英词典键集一致、固定标题走 Session 引用而非不存在的 `sessions.rename` 且在已固定或尚无标题时禁用、固定当前与行尾已固定图标共用四角框定星芒图标而非复用置顶会话的图钉、悬浮窗使用 hovercard 语义色 token 且空状态不渲染、点击查看状态优先走只读 HTTP 路由直接消费结构化 `snapshot`（支持冷会话与英文全量本地化，结构化错误不误回落，切页或关闭时中止在飞请求，回落文本解析器不误判以 `来源：` 开头的标题）、点击自动生成优先走无痕 `POST` 刷新路由并直接提示详细结果与错误、四 Tab 命名设置弹窗（实时预览、格式/类型词表/主与兜底模型选择/行为与折叠高级参数、仅修改时展示的底栏重载提醒、非法数值与 Host 校验提示、只读与路由缺失处理、插件重启丢回复时的深度相等回读确认），以及插件详情页 YAML 编辑器（加载、展开完整配置、语法错误提示、保存、二次确认恢复默认与只读状态）。它验证形状与注册，不验证视觉呈现；真实 GUI 渲染仍需在本机核对。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。使用正式 profile resolver 加载自包含的 linked package，不依赖未声明的 Harness SDK peer。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
 
@@ -59,7 +60,7 @@
 
 ## 复现入口
 
-单元与回归测试共 25 个文件，全部由 `npm test` 运行：
+单元与回归测试共 27 个文件，全部由 `npm test` 运行：
 
 - [标题解析与格式测试](../test/title.test.js)
 - [标题生成阶段测试](../test/title-runtime.test.js)
@@ -80,6 +81,8 @@
 - [命令测试](../test/commands.test.js)
 - [命令语法与文案测试](../test/title-command.test.js)
 - [只读状态路由测试](../test/status-route.test.js)
+- [命名设置测试](../test/settings.test.js)
+- [YAML 读写测试](../test/yaml.test.js)
 - [状态投影测试](../test/projection.test.js)
 - [历史维护测试](../test/backfill.test.js)
 - [历史维护预览测试](../test/backfill-plan.test.js)

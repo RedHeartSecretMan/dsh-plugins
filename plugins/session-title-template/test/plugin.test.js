@@ -339,3 +339,45 @@ test('read-only status routes inspect live sessions without createdAt and cold s
   } finally { await f.dispose(); }
 });
 
+
+test('the settings route saves through configEditor only for an addressable plugin entry', async () => {
+  for (const addressable of [true, false]) {
+    const f = fixture();
+    const routes = [];
+    const entry = { options: { id: 'session-title-template' } };
+    const edits = [];
+    const editor = {
+      entries: () => (addressable ? [entry] : []),
+      edit: async (target, change) => { edits.push({ target, next: change({ language: 'zh' }, {}) }); },
+    };
+    f.ctx.fiber = { entry };
+    f.ctx.webServer = { register(route) { routes.push(route); return () => {}; } };
+    f.ctx.get = key => (key === 'configEditor' ? editor : undefined);
+    try {
+      await apply(f.ctx, { roleProbe: { enabled: false }, agentsInstructions: { enabled: false } });
+      const route = routes.find(r => r.path === '/session-title-template/settings');
+      assert.ok(route, 'the settings route must be registered with the Host web server');
+      const makeRes = () => {
+        let body = '';
+        return { statusCode: 0, setHeader() {}, end(c = '') { body += c; }, json() { return JSON.parse(body); } };
+      };
+      const owner = { principal: { kind: 'owner' } };
+
+      const read = makeRes();
+      await route.handler({ method: 'GET' }, read, owner);
+      assert.equal(read.json().editable, addressable);
+
+      const write = makeRes();
+      await route.handler({ method: 'POST', headers: { 'content-type': 'application/json' }, body: { changes: { language: 'en' } } }, write, owner);
+      if (addressable) {
+        assert.equal(write.statusCode, 200);
+        assert.equal(edits.length, 1);
+        assert.equal(edits[0].target, entry, 'the write targets this plugin\'s own fiber entry');
+        assert.equal(edits[0].next.language, 'en');
+      } else {
+        assert.equal(write.statusCode, 409);
+        assert.equal(edits.length, 0, 'a row outside the root Include is never written');
+      }
+    } finally { await f.dispose(); }
+  }
+});

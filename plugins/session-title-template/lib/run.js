@@ -4,6 +4,8 @@ import { collectStreamText } from './stream-text.js';
 
 /** Pick the route used for a title request without switching the main agent route. */
 export function resolveRoute(config, request, ctx) {
+  const isSubagent = request?.session?.header?.origin === 'subagent';
+  if (isSubagent && config.subagentRoute !== undefined) return config.subagentRoute;
   if (config.provider !== undefined) return { provider: config.provider, model: config.model };
   if (request.route?.provider && request.route.model) return request.route;
   const header = request.session.requestHeader?.()?.config;

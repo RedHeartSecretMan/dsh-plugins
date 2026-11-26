@@ -34,6 +34,7 @@ function optionsFor(config, pattern, date) {
     template: config.template,
     types: config.types,
     fallbackType: config.fallbackType,
+    fallbackTruncation: config.fallbackTruncation,
     cjkSpacing: config.cjkSpacing,
     topicMaxChars: config.topicMaxChars,
   };
@@ -103,6 +104,7 @@ export function decidePlan(context, {
     lastEvaluated,
     delegationLabel: context.delegationLabel,
     isSubagent: context.isSubagent,
+    useDelegationLabel: config.subagentDelegationLabel !== false,
     maxProvisionalRefinements: config.maxProvisionalRefinements,
   });
 }

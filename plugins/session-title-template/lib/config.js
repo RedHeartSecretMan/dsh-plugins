@@ -16,19 +16,51 @@ const DEFAULT_TYPES = [
   { key: "研究", hint: "多渠道调研、方案对比、指标评测比较、投研分析" },
 ];
 
+const ENGLISH_DEFAULT_TYPES = [
+  { key: "feat", hint: "New capability, feature development, adding functionality" },
+  { key: "design", hint: "Architecture planning, technical design, API specification" },
+  { key: "fix", hint: "Troubleshooting, error resolution, anomaly analysis, bug fixes" },
+  { key: "refactor", hint: "Code refactoring, performance or UX improvements, naming and formatting" },
+  { key: "release", hint: "Version delivery, packaging, publishing, rollout" },
+  { key: "ops", hint: "Deployment config, service management, environments, networking, maintenance" },
+  { key: "explore", hint: "Understanding current behavior, Q&A, concepts, initial investigation", provisional: true },
+  { key: "docs", hint: "Writing documentation, technical specs, slides, reports" },
+  { key: "research", hint: "Multi-source investigation, comparisons, benchmarks, deep analysis" },
+];
+
+/** Built-in Chinese and English naming presets offered by the settings UI. */
+export const NAMING_PRESETS = Object.freeze({
+  zh: Object.freeze({
+    language: "zh",
+    cjkSpacing: true,
+    fallbackType: "探索",
+    types: Object.freeze(DEFAULT_TYPES.map((entry) => Object.freeze({ ...entry }))),
+  }),
+  en: Object.freeze({
+    language: "en",
+    cjkSpacing: false,
+    fallbackType: "explore",
+    types: Object.freeze(ENGLISH_DEFAULT_TYPES.map((entry) => Object.freeze({ ...entry }))),
+  }),
+});
+
 /** Canonical public configuration keys and their defaults. */
 export const DEFAULTS = {
   template: "[{date}][{type}] {topic}",
   dateFormat: "MMDD",
   timezone: "Asia/Shanghai",
   language: "zh",
+  uiLanguage: "auto",
   cjkSpacing: true,
   topicMinChars: 8,
   topicMaxChars: 20,
   fallbackType: "探索",
+  fallbackTruncation: "natural",
   types: DEFAULT_TYPES,
   provider: undefined,
   model: undefined,
+  subagentRoute: undefined,
+  subagentDelegationLabel: true,
   maxInputBytes: 4096,
   maxOutputTokens: 4096,
   timeoutMs: 60000,
@@ -74,7 +106,7 @@ function normalizeType(entry, index) {
   if (typeof record !== "object" || record === null || Array.isArray(record)) {
     invalid(field, "must be a string or an object with a key");
   }
-  rejectUnknown(record, ["key", "hint", "provisional"], field);
+  rejectUnknown(record, ["key", "hint", "provisional", "maxRefinements"], field);
   // Check the untrimmed input too: a newline must not disappear during trim.
   if (typeof record.key === "string" && /[{}[\]【】\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(record.key)) {
     invalid(`${field}.key`, "must not contain braces, brackets, or control characters");
@@ -84,7 +116,19 @@ function normalizeType(entry, index) {
   if (record.provisional !== undefined && typeof record.provisional !== "boolean") {
     invalid(`${field}.provisional`, "must be a boolean");
   }
-  return { key, hint, ...(record.provisional === true ? { provisional: true } : {}) };
+  let maxRefinements;
+  if (record.maxRefinements !== undefined) {
+    if (record.provisional !== true) {
+      invalid(`${field}.maxRefinements`, "requires provisional: true");
+    }
+    maxRefinements = requireInteger(record.maxRefinements, `${field}.maxRefinements`, 1, 100);
+  }
+  return {
+    key,
+    hint,
+    ...(record.provisional === true ? { provisional: true } : {}),
+    ...(maxRefinements === undefined ? {} : { maxRefinements }),
+  };
 }
 
 function validateTemplate(template) {
@@ -162,11 +206,17 @@ export function resolveConfig(config) {
 
   const language = raw.language === undefined ? DEFAULTS.language : raw.language;
   if (language !== "zh" && language !== "en") invalid("language", 'must be "zh" or "en"');
+  const uiLanguage = raw.uiLanguage === undefined ? DEFAULTS.uiLanguage : raw.uiLanguage;
+  if (uiLanguage !== "auto" && uiLanguage !== "zh" && uiLanguage !== "en") {
+    invalid("uiLanguage", 'must be "auto", "zh", or "en"');
+  }
   const template = validateTemplate(raw.template === undefined ? DEFAULTS.template : raw.template);
   const dateFormat = validateDateFormat(raw.dateFormat === undefined ? DEFAULTS.dateFormat : raw.dateFormat);
   const timezone = validateTimezone(raw.timezone === undefined ? DEFAULTS.timezone : raw.timezone);
   const fallbackType = raw.fallbackType === undefined ? DEFAULTS.fallbackType : raw.fallbackType;
   if (!keys.includes(fallbackType)) invalid("fallbackType", "must be one of the configured types");
+  const fallbackTruncation = raw.fallbackTruncation === undefined ? DEFAULTS.fallbackTruncation : raw.fallbackTruncation;
+  if (fallbackTruncation !== 'natural' && fallbackTruncation !== 'hard') invalid('fallbackTruncation', 'must be "natural" or "hard"');
   const cjkSpacing = raw.cjkSpacing === undefined ? DEFAULTS.cjkSpacing : raw.cjkSpacing;
   if (typeof cjkSpacing !== "boolean") invalid("cjkSpacing", "must be a boolean");
 
@@ -175,6 +225,13 @@ export function resolveConfig(config) {
   if (topicMaxChars < topicMinChars) invalid("topicMaxChars", "must not be smaller than topicMinChars");
 
   if ((raw.provider === undefined) !== (raw.model === undefined)) invalid("provider", "and config.model must be supplied together");
+  const subagentRoute = normalizeRoute(raw.subagentRoute, "subagentRoute");
+  const subagentDelegationLabel = raw.subagentDelegationLabel === undefined
+    ? DEFAULTS.subagentDelegationLabel
+    : raw.subagentDelegationLabel;
+  if (typeof subagentDelegationLabel !== "boolean") {
+    invalid("subagentDelegationLabel", "must be a boolean");
+  }
   const agentsInstructionsRaw = raw.agentsInstructions === undefined ? {} : raw.agentsInstructions;
   if (typeof agentsInstructionsRaw !== "object" || agentsInstructionsRaw === null || Array.isArray(agentsInstructionsRaw)) {
     invalid("agentsInstructions", "must be an object");
@@ -212,13 +269,17 @@ export function resolveConfig(config) {
     dateFormat,
     timezone,
     language,
+    uiLanguage,
     cjkSpacing,
     topicMinChars,
     topicMaxChars,
     fallbackType,
+    fallbackTruncation,
     types: Object.freeze(normalizedTypes.map((entry) => Object.freeze(entry))),
     provider: raw.provider === undefined ? undefined : requireString(raw.provider, "provider"),
     model: raw.model === undefined ? undefined : requireString(raw.model, "model"),
+    subagentRoute,
+    subagentDelegationLabel,
     maxInputBytes: requireInteger(raw.maxInputBytes === undefined ? DEFAULTS.maxInputBytes : raw.maxInputBytes, "maxInputBytes", 256, 1048576),
     maxOutputTokens: requireInteger(raw.maxOutputTokens === undefined ? DEFAULTS.maxOutputTokens : raw.maxOutputTokens, "maxOutputTokens", 8, 4096),
     timeoutMs: requireInteger(raw.timeoutMs === undefined ? DEFAULTS.timeoutMs : raw.timeoutMs, "timeoutMs", 1000, 600000),

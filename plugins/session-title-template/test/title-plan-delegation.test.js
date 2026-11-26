@@ -51,6 +51,12 @@ test('a missing delegation label falls back to the message source', () => {
   assert.match(plan.fallback, /^\[1124\]\[探索\] /u);
 });
 
+test('subagentDelegationLabel false skips local first-turn delegation output', () => {
+  const plan = planTitle(delegated({ useDelegationLabel: false }));
+  assert.notEqual(plan.source, 'delegation-label');
+  assert.equal(plan.delegationTitle, undefined);
+});
+
 test('an existing provider title is kept even for a subagent', () => {
   const plan = planTitle(delegated({
     current: {

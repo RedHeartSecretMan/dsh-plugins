@@ -25,7 +25,7 @@ export const REFRESH_ROUTE_PATH = '/session-title-template/refresh';
 const MAX_BODY_BYTES = 8 * 1024;
 
 /** Send one non-cacheable JSON response when the socket is still writable. */
-function sendJson(res, status, body) {
+export function sendJson(res, status, body) {
   if (res.writableEnded || res.destroyed) return;
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');
@@ -34,15 +34,15 @@ function sendJson(res, status, body) {
 }
 
 /** Sanitize an error category so provider messages never leave the Host. */
-function safeCategory(error) {
+export function safeCategory(error) {
   const category = error?.code ?? error?.name ?? 'Error';
   return typeof category === 'string' && /^[A-Za-z0-9_.-]+$/u.test(category) ? category : 'Error';
 }
 
 /** Read and parse a bounded JSON request body. */
-async function readJsonBody(req) {
+export async function readJsonBody(req, maxBytes = MAX_BODY_BYTES) {
   if (typeof req.body === 'string') {
-    if (Buffer.byteLength(req.body, 'utf8') > MAX_BODY_BYTES) return { tooLarge: true };
+    if (Buffer.byteLength(req.body, 'utf8') > maxBytes) return { tooLarge: true };
     return { value: JSON.parse(req.body) };
   }
   if (req.body !== undefined && req.body !== null && typeof req.body === 'object') {
@@ -53,7 +53,7 @@ async function readJsonBody(req) {
   for await (const chunk of req) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8');
     bytes += buf.length;
-    if (bytes > MAX_BODY_BYTES) return { tooLarge: true };
+    if (bytes > maxBytes) return { tooLarge: true };
     chunks.push(buf);
   }
   return { value: JSON.parse(Buffer.concat(chunks, bytes).toString('utf8')) };

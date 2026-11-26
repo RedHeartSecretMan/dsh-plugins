@@ -12,6 +12,7 @@ import { registerCoordination } from './lib/coordination.js';
 import { titleStateProjectionDefinition } from './lib/projection.js';
 import { registerTitleCommands } from './lib/commands.js';
 import { registerStatusRoute } from './lib/status-route.js';
+import { registerSettingsRoute } from './lib/settings-route.js';
 
 export const name = 'session-title-template';
 export const inject = ['sessionTitle', 'llm', 'sessions', 'sessionProjections'];
@@ -98,11 +99,14 @@ export async function apply(ctx, rawConfig) {
       ? await readInstructions({ cwd, maxBytes: config.agentsInstructions.maxBytes })
       : undefined;
     const headerConfig = observed.events.findLast(event => event?.type === 'request/header')?.data?.config;
-    const route = config.provider !== undefined
-      ? { provider: config.provider, model: config.model }
-      : (headerConfig?.provider && headerConfig?.model
-        ? { provider: headerConfig.provider, model: headerConfig.model }
-        : config.backfill.fallbackRoute);
+    const isColdSubagent = observed.session?.origin === 'subagent';
+    const route = isColdSubagent && config.subagentRoute !== undefined
+      ? config.subagentRoute
+      : config.provider !== undefined
+        ? { provider: config.provider, model: config.model }
+        : (headerConfig?.provider && headerConfig?.model
+          ? { provider: headerConfig.provider, model: headerConfig.model }
+          : config.backfill.fallbackRoute);
     const id = String(sessionId);
     return {
       snapshot: describeTitleState({
@@ -192,6 +196,24 @@ export async function apply(ctx, rawConfig) {
       describeCold: describeColdSession,
       refresh: refreshSession,
       state,
+    });
+    // Quick settings and developer YAML save through the Harness config editor,
+    // which keeps the rest of the profile patch (comments, other plugins, `!!js`
+    // rows) intact.
+    registerSettingsRoute(webCtx, {
+      config,
+      rawConfig,
+      llm: ctx.llm,
+      state,
+      getEditor: () => {
+        const editor = ctx.get?.('configEditor');
+        const entry = ctx.fiber?.entry;
+        // Only rows owned by the profile's root Include are addressable; a row
+        // inside a nested Include is read-only here and the form says so.
+        const addressable = editor !== undefined && entry !== undefined
+          && (typeof editor.entries !== 'function' || editor.entries().includes(entry));
+        return addressable ? { editor, entry } : {};
+      },
     });
   });
 

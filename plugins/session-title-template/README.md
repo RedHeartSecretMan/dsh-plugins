@@ -35,12 +35,16 @@ Override `id: session-title-template` in your profile's user patch. The whole `c
 | `dateFormat` | `MMDD` | Complete `YYYY`, `YY`, `MM`, `DD` tokens and `- / . _` separators; month/day required |
 | `timezone` | `Asia/Shanghai` | IANA zone for the creation timestamp |
 | `language` | `zh` | `zh` or `en`; selects prompt language, not translated type labels |
-| `types` | Nine Chinese types | Array of strings or `{ key, hint, provisional? }` objects |
+| `uiLanguage` | `auto` | Plugin UI language override. `auto` follows DSH, while `zh` and `en` affect this plugin's menus and dialogs only |
+| `types` | Nine Chinese types | Array of strings or `{ key, hint, provisional?, maxRefinements? }` objects (`maxRefinements` is an optional per-type 1–100 override requiring `provisional: true`) |
 | `fallbackType` | `探索` | Local fallback type when no route is available; must exist in the vocabulary |
+| `fallbackTruncation` | `natural` | Model-free fallback topic truncation. `natural` preserves sentence and word boundaries, while `hard` follows the width limit strictly |
 | `cjkSpacing` | `true` | Space between Han text and adjacent Latin letters/digits |
 | `topicMinChars` | `8` | Prompt guidance; a useful short topic is not rejected just to reach this target |
 | `topicMaxChars` | `20` | CJK-equivalent width limit for the topic (ASCII = 0.5, spaces = 0), truncated on word/clause boundaries |
-| `provider` / `model` | unset | Supply both or neither; otherwise use the session route |
+| `provider` / `model` | unset | Main-agent title route; supply both or neither, otherwise use the session route |
+| `subagentRoute` | unset | Optional `{ provider, model }` route for subagent title generation/refinement; inherits the main route when unset |
+| `subagentDelegationLabel` | `true` | Use a subagent's `delegationLabel` as the first title without a model call. Set `false` to call the title model on turn one |
 | `maxInputBytes` | `4096` | Final framed JSON UTF-8 byte budget, including escaping and wrapper text |
 | `maxOutputTokens` | `4096` | Output cap; uses the lowest supported reasoning effort; the cap includes hidden reasoning, while topic length is validated separately |
 | `timeoutMs` | `60000` | Deadline for one candidate-route attempt |
@@ -69,6 +73,8 @@ Unknown keys produce an activation error rather than silently discarding setting
       - { key: explore, hint: Understanding current behaviour, provisional: true }
     fallbackType: explore
 ```
+
+The settings dialog provides Chinese and English naming presets. A preset updates the default vocabulary, fallback type, prompt language, CJK spacing, and template together, while each field remains editable afterward. The Types table keeps the provisional switch and per-type refinement count beside each vocabulary row. The fallback policy explains that model-free titles use natural sentence, word, and parallel-clause boundaries.
 
 The default Chinese vocabulary is 功能, 设计, 修复, 优化, 发布, 运维, 探索, 文档, 研究. `探索` is provisional. A canonical concrete title with the correct creation date is retained while the adaptive policy sees no reason to evaluate; summarized provisional titles refine when new substantive input arrives. Deterministic first-message fallbacks, including legacy provider-labelled fallbacks and Host-truncated fallbacks without model provenance, remain retryable. Retaining a title preserves its model provenance. Model output is leniently normalized, but stored titles require canonical syntax and the correct date, so malformed legacy dates are not frozen as settled.
 
@@ -111,10 +117,12 @@ Harness suppresses automatic updates to user-pinned titles. An **explicit UI ref
 The package includes a Web UI client half (`client.js`) and an in-session `/title` slash command:
 
 - **Row indicators & hover card**: Each session row displays a star-family icon derived from the `sessionTitleState` projection — free sparkle (`provider` automatic), corner-framed star (`user` manually pinned, distinct from Pin Session's pushpin), or dashed-ring star (`fallback` temporary title) — paired with a matching hover-card status section.
-- **`Session title ›` context submenu**:
+- **`Session title ›` context submenu** (works on cold sessions for status and settings; Auto-generate needs an open session):
   - **Auto-generate**: Forces regeneration (and unpins a manual title) on an open session through an owner-only `POST /session-title-template/refresh` route (falling back to `/title refresh` before a Host reload), showing in-flight progress without appending command blocks into the conversation.
   - **Pin current**: Pins the current title via `SessionFace.rename` (`ctx.sessions.using`), resuming a cold session when needed; disabled when the title is already pinned or absent.
   - **View status**: Opens a localized `shell.overlay` modal showing the current title and badge, any unresolved failure with advice, built-in rules, contributing `AGENTS.md` supplements, and the role-probe verdict. Reads through an owner-only `GET /session-title-template/status` route for both live and persisted cold sessions without opening an agent or mutating the session log.
+  - **Naming settings**: Opens a four-tab modal (**Format** with live title preview, `template`, `language`, topic length, CJK spacing, `dateFormat`, and `timezone`; **Types** with decoupled **Policy** (`fallbackType` plus per-type provisional refinement counts) and collapsible **Vocabulary** (`types` keys/hints and restore-defaults); **Models** with a unified **Title generation** card for main-agent, subagent (`subagentRoute`), and fallback (`backfill.fallbackRoute`) routes backed by `ctx.llm` plus manual entry; **Behavior** with **General** toggles and `agentsInstructions.maxBytes`, plus collapsible **Advanced** parameters for input/output budgets, timeout, and retries).
+- **Plugin detail page YAML editor** (`plugins.bundle.config`): In DSH's Plugins manager detail page for this package, developers can view and directly edit the plugin's complete `config` block as YAML (including `backfill.retitle`), expand all defaults, validate syntax and schema before saving, or reset to bundle defaults. Both settings surfaces read and persist through the owner-only `GET`/`POST /session-title-template/settings` route backed by the Harness config editor, keeping comments, other plugins' rows, and `!!js` expressions in the profile patch intact. Saving reloads this plugin (cancelling in-flight title requests); unchanged saves never write, and read-only profiles or overridden values are surfaced explicitly.
 - **`/title` command**: Inside any live conversation, run `/title` (or `/title status`), `/title refresh`, `/title pin <title>`, or `/title auto`.
 
 ## Explicit current-session tools

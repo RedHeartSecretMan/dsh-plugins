@@ -1,10 +1,14 @@
 /**
  * session-title-template — Client half.
  *
- * Adds four surfaces to the Web UI: a three-action session-menu group, a
+ * Adds six surfaces to the Web UI: a four-action session-menu group, a
  * title-status icon at the end of each row, a styled status line in the row's
- * hover card, and a modal dialog in `shell.overlay` for inspecting full naming
- * status instead of dumping multi-line text into a toast.
+ * hover card, a modal dialog in `shell.overlay` for inspecting full naming
+ * status instead of dumping multi-line text into a toast, a four-tab naming
+ * settings modal for daily configuration, and a developer YAML configuration
+ * editor in the plugin detail page (`plugins.bundle.config`). Both settings
+ * surfaces save through the Host's `GET/POST session-title-template/settings`
+ * route (the Harness config editor, never a direct patch-file write).
  *
  * Two framework facts shape this file:
  *
@@ -26,10 +30,12 @@ window.__ModuleLoader__.load({
     const h = React.createElement;
 
     const NS = 'sessionTitleTemplate';
+    const PACKAGE_NAME = '@redheartsecretman/session-title-template';
     const ICON_SLOT = 'contextMenu.icon';
     const TRAILING_SLOT = 'sidebar.session.row.trailing';
     const HOVER_SLOT = 'sidebar.session.row.hover';
     const OVERLAY_SLOT = 'shell.overlay';
+    const BUNDLE_CONFIG_SLOT = 'plugins.bundle.config';
 
     /**
      * Glyphs registered under this plugin's own keys.
@@ -68,6 +74,15 @@ window.__ModuleLoader__.load({
         { d: 'M5.5 13.75H4C3.0335 13.75 2.25 12.9665 2.25 12V10.5' },
         { d: 'M8 4.75C8 6.75 9.25 8 11.25 8C9.25 8 8 9.25 8 11.25C8 9.25 6.75 8 4.75 8C6.75 8 8 6.75 8 4.75Z' },
       ],
+      // two sliders: "naming settings", a form rather than an action on one session.
+      'session-title-template.settings': [
+        { d: 'M2.5 4.75H7.5' },
+        { circle: [9.25, 4.75, 1.75] },
+        { d: 'M11 4.75H13.5' },
+        { d: 'M2.5 11.25H4.5' },
+        { circle: [6.25, 11.25, 1.75] },
+        { d: 'M8 11.25H13.5' },
+      ],
       // an eye: "view the status", read-only.
       'session-title-template.status': [
         { d: 'M1.5 8C3.36 4.41 5.52 2.63 8 2.63C10.48 2.63 12.64 4.41 14.5 8C12.64 11.59 10.48 13.37 8 13.37C5.52 13.37 3.36 11.59 1.5 8Z' },
@@ -94,9 +109,33 @@ window.__ModuleLoader__.load({
       { d: 'M11.75 4.25L4.25 11.75' },
     ];
 
+    const INFO_PARTS = [
+      { circle: [8, 8, 6.25] },
+      { d: 'M8 7.4V11.3' },
+      { circle: [8, 5.15, 0.55], fill: true },
+    ];
+
+    const CHECK_PARTS = [
+      { d: 'M3.5 8.2L6.6 11.3L12.6 4.8' },
+    ];
+
+    const PLUS_PARTS = [
+      { d: 'M8 3.25V12.75' },
+      { d: 'M3.25 8H12.75' },
+    ];
+
+    const CHEVRON_RIGHT_PARTS = [
+      { d: 'M6 3.75L10.25 8L6 12.25' },
+    ];
+
+    const CHEVRON_DOWN_PARTS = [
+      { d: 'M3.75 6L8 10.25L12.25 6' },
+    ];
+
     /** Document-relative Host HTTP routes registered on `ctx.webServer`. */
     const STATUS_ROUTE = 'session-title-template/status';
     const REFRESH_ROUTE = 'session-title-template/refresh';
+    const SETTINGS_ROUTE = 'session-title-template/settings';
 
     /** Projection key this plugin registers on the Host. */
     const STATE_KEY = 'sessionTitleState';
@@ -194,7 +233,8 @@ window.__ModuleLoader__.load({
     };
 
     /** The status icon for one row, or null when the Host has said nothing. */
-    function TitleStatusIcon({ useSessions, sessionId, t }) {
+    function TitleStatusIcon({ useSessions, sessionId, t, uiLanguage }) {
+      useUiLanguage(uiLanguage);
       const kind = titleStateKind(useTitleState(useSessions, sessionId));
       // Absent or empty projection means the Host has no title state to assert.
       if (kind === undefined) return null;
@@ -218,7 +258,8 @@ window.__ModuleLoader__.load({
      * rather than inheriting body text color. Icon size (12px in a 16px box)
      * and 8px gap match the built-in schedule and forge hover sections.
      */
-    function TitleHover({ useSessions, sessionId, t }) {
+    function TitleHover({ useSessions, sessionId, t, uiLanguage }) {
+      useUiLanguage(uiLanguage);
       const kind = titleStateKind(useTitleState(useSessions, sessionId));
       if (kind === undefined) return null;
       const paint = STATUS_GLYPH[kind];
@@ -509,18 +550,20 @@ window.__ModuleLoader__.load({
     }
 
     /** Button with smooth hover background and foreground transitions. */
-    function ActionButton({ onClick, style, hoverBackground, hoverColor, 'aria-label': ariaLabel, children }) {
+    function ActionButton({ onClick, style, hoverBackground, hoverColor, disabled = false, 'aria-label': ariaLabel, children }) {
       const [hovered, setHovered] = React.useState(false);
+      const active = hovered && !disabled;
       return h('button', {
         type: 'button',
         'aria-label': ariaLabel,
+        disabled,
         onClick,
         onMouseEnter: () => setHovered(true),
         onMouseLeave: () => setHovered(false),
         style: {
           ...style,
-          background: hovered ? (hoverBackground ?? 'var(--dsw-alias-interactive-bg-hover)') : (style?.background ?? 'transparent'),
-          ...(hoverColor === undefined ? {} : { color: hovered ? hoverColor : style?.color }),
+          background: active ? (hoverBackground ?? 'var(--dsw-alias-interactive-bg-hover)') : (style?.background ?? 'transparent'),
+          ...(hoverColor === undefined ? {} : { color: active ? hoverColor : style?.color }),
         },
       }, children);
     }
@@ -548,20 +591,23 @@ window.__ModuleLoader__.load({
 
     const CODE_FONT = 'var(--dsw-font-markdown-code-font-family, ui-monospace, SFMono-Regular, Menlo, monospace)';
 
-    /** Structured modal dialog rendered in `shell.overlay` (portalled to body). */
-    function TitleStatusDialog({ store, t }) {
-      const [dialog, setDialog] = React.useState(() => store.get());
-      const dialogRef = React.useRef(null);
+    /**
+     * Focus trap, Escape-to-close and focus restore shared by every modal here.
+     *
+     * `onClose` is read through a ref so a fresh closure on each render never
+     * re-runs the effect and steals focus back from the control being edited.
+     */
+    function useModalBehavior(open, dialogRef, onClose) {
       const previousFocusRef = React.useRef(null);
-      React.useEffect(() => store.subscribe(() => setDialog(store.get())), [store]);
-      const open = dialog !== null;
+      const closeRef = React.useRef(onClose);
+      closeRef.current = onClose;
       React.useEffect(() => {
         if (!open) return undefined;
         previousFocusRef.current = typeof document !== 'undefined' ? document.activeElement : null;
         dialogRef.current?.focus?.({ preventScroll: true });
         const onKeyDown = (event) => {
           if (event.key === 'Escape') {
-            store.close();
+            closeRef.current();
             return;
           }
           if (event.key === 'Tab' && dialogRef.current && typeof dialogRef.current.querySelectorAll === 'function') {
@@ -598,10 +644,129 @@ window.__ModuleLoader__.load({
             prev.focus?.({ preventScroll: true });
           }
         };
-      }, [open, store]);
+      }, [open]);
+    }
+
+    /** Dim mask plus dialog frame with header, optional sticky subHeader/footer and close button, portalled to body. */
+    function ModalFrame({ dialogRef, bodyRef, label, title, iconKey, closeLabel, onClose, width = 500, height, minHeight, maxHeight, subHeader = null, footer = null, bodyStyle, children }) {
+      const modal = h('div', {
+        role: 'presentation',
+        style: {
+          position: 'fixed', inset: 0, zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 'max(24px, var(--dsh-frame-overlay-top, 24px)) 24px',
+          pointerEvents: 'auto', boxSizing: 'border-box',
+        },
+      },
+        // Match the native Modal mask: absolute inside the fixed root, dim-only
+        // with no backdrop blur (`--dsw-mask-blur: none` in DSH) so opening the
+        // modal does not trigger a viewport compositor shift.
+        h('div', {
+          'aria-hidden': true,
+          onClick: onClose,
+          style: {
+            position: 'absolute',
+            inset: 'var(--dsh-frame-chrome-top, 0px) 0 0',
+            background: 'var(--dsw-alias-bg-mask-1)',
+          },
+        }),
+        h('div', {
+          ref: dialogRef,
+          tabIndex: -1,
+          role: 'dialog',
+          'aria-modal': true,
+          'aria-label': label,
+          onClick: (event) => event.stopPropagation(),
+          style: {
+            position: 'relative', zIndex: 1, outline: 'none',
+            width: `min(${width}px, 100%)`,
+            ...(height === undefined
+              ? { ...(minHeight === undefined ? {} : { minHeight }), maxHeight: maxHeight ?? 'min(100%, 860px)' }
+              : { height, maxHeight: maxHeight ?? '100%' }),
+            display: 'flex', flexDirection: 'column',
+            background: 'var(--dsw-alias-bg-layer-2)',
+            color: 'var(--dsw-alias-label-primary)',
+            border: 0,
+            borderRadius: 'var(--dsw-radius-panel, 16px)',
+            boxShadow: 'var(--dsw-elevation-prominent, 0 0 1px rgba(0, 0, 0, 0.2), 0 12px 32px rgba(0, 0, 0, 0.14))',
+            overflow: 'hidden', userSelect: 'text',
+          },
+        },
+          // Header
+          h('div', {
+            style: {
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+              padding: '14px 16px 12px 20px',
+              borderBottom: subHeader === null ? '1px solid var(--dsw-alias-border-l1)' : 'none',
+              flex: 'none',
+            },
+          },
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
+              h('span', { style: { color: 'var(--dsw-alias-label-secondary)', flex: 'none' } },
+                glyph(OWN_ICONS[iconKey], 16)),
+              h('h2', {
+                style: {
+                  margin: 0, fontSize: 15, lineHeight: '22px', fontWeight: 600,
+                  color: 'var(--dsw-alias-label-primary)',
+                },
+              }, title),
+            ),
+            h(ActionButton, {
+              'aria-label': closeLabel,
+              onClick: onClose,
+              hoverBackground: 'var(--dsw-alias-interactive-bg-active)',
+              hoverColor: 'var(--dsw-alias-label-primary)',
+              style: {
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 28, height: 28, padding: 0, border: 0, borderRadius: '50%',
+                background: 'var(--dsw-alias-interactive-bg-hover)',
+                color: 'var(--dsw-alias-label-secondary)',
+                cursor: 'pointer', flex: 'none',
+                transition: 'background-color 140ms ease, color 140ms ease',
+              },
+            }, glyph(CLOSE_PARTS, 13, 1.6)),
+          ),
+          subHeader === null ? null : h('div', {
+            style: {
+              padding: '0 20px 12px',
+              borderBottom: '1px solid var(--dsw-alias-border-l1)',
+              flex: 'none',
+            },
+          }, subHeader),
+          // Scrollable body (header close button, Esc and backdrop dismiss)
+          h('div', {
+            ref: bodyRef,
+            style: {
+              padding: '14px 20px 18px', overflowY: 'auto', scrollbarGutter: 'stable',
+              flex: '1 1 auto', minHeight: 0, ...bodyStyle,
+            },
+          }, children),
+          footer === null ? null : h('div', {
+            style: {
+              padding: '12px 20px',
+              borderTop: '1px solid var(--dsw-alias-border-l1)',
+              flex: 'none',
+            },
+          }, footer),
+        ),
+      );
+      if (typeof document !== 'undefined' && document.body && typeof ReactDOM?.createPortal === 'function') {
+        return ReactDOM.createPortal(modal, document.body);
+      }
+      return modal;
+    }
+
+    /** Structured modal dialog rendered in `shell.overlay` (portalled to body). */
+    function TitleStatusDialog({ store, t, uiLanguage }) {
+      useUiLanguage(uiLanguage);
+      const [dialog, setDialog] = React.useState(() => store.get());
+      const dialogRef = React.useRef(null);
+      React.useEffect(() => store.subscribe(() => setDialog(store.get())), [store]);
+      const open = dialog !== null;
+      const close = () => store.close();
+      useModalBehavior(open, dialogRef, close);
 
       if (!open) return null;
-      const close = () => store.close();
       const { report, loading, error, displayTitle } = dialog;
 
       const kind = report?.title?.kind;
@@ -824,91 +989,1907 @@ window.__ModuleLoader__.load({
             }, report.extraLines.join('\n')),
           );
 
-      const modal = h('div', {
-        role: 'presentation',
+      return h(ModalFrame, {
+        dialogRef,
+        label: t('dialog.title'),
+        title: t('dialog.title'),
+        iconKey: 'session-title-template.title',
+        closeLabel: t('dialog.close'),
+        onClose: close,
+      }, body);
+    }
+
+    /** Closed date-format presets offered by the settings form; a custom value stays selectable. */
+    const SETTINGS_DATE_FORMATS = ['MMDD', 'YYMMDD', 'YYYYMMDD', 'MM-DD', 'YYYY-MM-DD'];
+
+    /** Fields edited as text but sent as whole numbers. */
+    const SETTINGS_NUMBER_FIELDS = [
+      'topicMinChars',
+      'topicMaxChars',
+      'agentsInstructionsMaxBytes',
+      'maxInputBytes',
+      'maxOutputTokens',
+      'timeoutMs',
+      'retryAttempts',
+      'retryDelayMs',
+    ];
+
+    /** Advanced request-tuning fields housed in Tab 4's collapsible group. */
+    const SETTINGS_ADVANCED_FIELDS = [
+      'maxInputBytes',
+      'maxOutputTokens',
+      'timeoutMs',
+      'retryAttempts',
+      'retryDelayMs',
+    ];
+
+    /** Ordered tab identifiers for the sidebar naming-settings dialog. */
+    const SETTINGS_TABS = ['format', 'types', 'models', 'behavior'];
+
+    /** Shared vocabulary grid so headings, rows, and the add action align. */
+    const TYPE_TABLE_GRID = '96px minmax(0, 1fr) 52px 72px 26px';
+
+    /** Map each editable field back to the tab that owns it (for dirty dots and error focus). */
+    const SETTINGS_FIELD_TAB = {
+      template: 'format',
+      language: 'format',
+      topicMinChars: 'format',
+      topicMaxChars: 'format',
+      cjkSpacing: 'format',
+      dateFormat: 'format',
+      timezone: 'format',
+      fallbackType: 'types',
+      maxProvisionalRefinements: 'types',
+      provisionalRules: 'types',
+      types: 'types',
+      provider: 'models',
+      model: 'models',
+      subagentProvider: 'models',
+      subagentModel: 'models',
+      fallbackProvider: 'models',
+      fallbackModel: 'models',
+      agentsInstructions: 'behavior',
+      agentsInstructionsMaxBytes: 'behavior',
+      subagentDelegationLabel: 'behavior',
+      uiLanguage: 'behavior',
+      roleProbe: 'behavior',
+      backfill: 'behavior',
+      maxInputBytes: 'behavior',
+      maxOutputTokens: 'behavior',
+      timeoutMs: 'behavior',
+      retryAttempts: 'behavior',
+      retryDelayMs: 'behavior',
+    };
+
+    /** Delimiter joining provider + model inside a single `<option>` value. */
+    const ROUTE_VALUE_SEP = '\u0000';
+    const CUSTOM_ROUTE_VALUE = '__custom__';
+
+    /** Strip the plugin prefix a Host validation message carries. */
+    function cleanHostMessage(message) {
+      return String(message ?? '').replace(/^session-title-template:\s*/u, '').slice(0, 240);
+    }
+
+    /** Structural equality for JSON-shaped config values (primitives, arrays, plain objects). */
+    function deepEqual(left, right) {
+      if (left === right) return true;
+      if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false;
+      if (Array.isArray(left) !== Array.isArray(right)) return false;
+      if (Array.isArray(left)) {
+        if (left.length !== right.length) return false;
+        for (let i = 0; i < left.length; i += 1) {
+          if (!deepEqual(left[i], right[i])) return false;
+        }
+        return true;
+      }
+      const leftKeys = Object.keys(left);
+      const rightKeys = Object.keys(right);
+      if (leftKeys.length !== rightKeys.length) return false;
+      for (const key of leftKeys) {
+        if (!Object.prototype.hasOwnProperty.call(right, key)) return false;
+        if (!deepEqual(left[key], right[key])) return false;
+      }
+      return true;
+    }
+
+    /** Normalize one type row into a clean mutable object. */
+    function cloneTypeEntry(entry) {
+      const provisional = entry?.provisional === true;
+      return {
+        key: String(entry?.key ?? ''),
+        hint: String(entry?.hint ?? ''),
+        provisional,
+        ...(provisional && Number.isInteger(entry?.maxRefinements) ? { maxRefinements: entry.maxRefinements } : {}),
+      };
+    }
+
+    /** Extract provisional type rules in `{ key, maxRefinements }` form for the Policy card. */
+    function extractProvisionalRules(types, defaultLimit = 4) {
+      const fallback = Number.isInteger(defaultLimit) && defaultLimit > 0 ? defaultLimit : 4;
+      if (!Array.isArray(types)) return [];
+      return types
+        .filter((entry) => entry?.provisional === true && String(entry?.key ?? '').trim() !== '')
+        .map((entry) => ({
+          key: String(entry.key).trim(),
+          maxRefinements: String(Number.isInteger(entry.maxRefinements) ? entry.maxRefinements : fallback),
+        }));
+    }
+
+    /** Deep-clone a settings value object so draft edits never mutate saved values. */
+    function cloneDraft(values) {
+      if (values === null || typeof values !== 'object') return values;
+      const clonedTypes = Array.isArray(values.types) ? values.types.map(cloneTypeEntry) : undefined;
+      return {
+        ...values,
+        ...(clonedTypes === undefined ? {} : { types: clonedTypes }),
+        ...(clonedTypes === undefined ? {} : { provisionalRules: extractProvisionalRules(clonedTypes, values.maxProvisionalRefinements) }),
+      };
+    }
+
+    /** Normalize vocabulary `(key, hint)` pairs alone, decoupled from provisional policy. */
+    function normalizeVocabularyForDiff(types) {
+      if (!Array.isArray(types)) return [];
+      return types.map((entry) => ({
+        key: String(entry?.key ?? '').trim(),
+        hint: String(entry?.hint ?? ''),
+      }));
+    }
+
+    /** Normalize saved type entries with explicit resolved per-type refinement limits. */
+    function normalizeSavedTypes(types, defaultLimit = 4) {
+      const fallback = Number.isInteger(defaultLimit) && defaultLimit > 0 ? defaultLimit : 4;
+      if (!Array.isArray(types)) return [];
+      return types.map((entry) => {
+        const provisional = entry?.provisional === true;
+        return {
+          key: String(entry?.key ?? '').trim(),
+          hint: String(entry?.hint ?? ''),
+          ...(provisional ? { provisional: true, maxRefinements: Number.isInteger(entry?.maxRefinements) ? entry.maxRefinements : fallback } : {}),
+        };
+      });
+    }
+
+    /**
+     * Compare the editable draft with the saved values.
+     *
+     * @returns `{ changes, invalidNumber, invalidFields, dirtyTabs }`. A route
+     * edit always sends provider and model together because the Host requires
+     * each route to be paired.
+     */
+    function diffSettings(values, draft) {
+      const changes = {};
+      const invalidFields = [];
+      const dirtyTabs = new Set();
+      for (const key of Object.keys(values)) {
+        if (key === 'provisionalRules' || key === 'maxProvisionalRefinements') {
+          // Per-type provisional limits are edited via `provisionalRules` and emitted on `types`.
+          continue;
+        }
+        if (key === 'types') {
+          let invalidTypeCount = false;
+          const defaultLimit = Number.isInteger(draft?.maxProvisionalRefinements) && draft.maxProvisionalRefinements > 0
+            ? draft.maxProvisionalRefinements : (values.maxProvisionalRefinements ?? 4);
+          const nextTypes = (Array.isArray(draft?.types) ? draft.types : []).map((entry) => {
+            const provisional = entry?.provisional === true;
+            const text = String(entry?.maxRefinements ?? defaultLimit).trim();
+            if (provisional && !/^\d+$/u.test(text)) invalidTypeCount = true;
+            const limit = Number(text);
+            return {
+              key: String(entry?.key ?? '').trim(),
+              hint: String(entry?.hint ?? ''),
+              ...(provisional ? { provisional: true, maxRefinements: Number.isInteger(limit) ? limit : 0 } : {}),
+            };
+          });
+          if (invalidTypeCount) {
+            invalidFields.push('types');
+            dirtyTabs.add('types');
+            continue;
+          }
+          const savedTypes = normalizeSavedTypes(values.types, values.maxProvisionalRefinements);
+          if (!deepEqual(nextTypes, savedTypes)) {
+            changes.types = nextTypes;
+            dirtyTabs.add('types');
+          }
+          continue;
+        }
+        let next = draft?.[key];
+        if (SETTINGS_NUMBER_FIELDS.includes(key)) {
+          const text = String(next ?? '').trim();
+          if (!/^\d+$/u.test(text)) {
+            invalidFields.push(key);
+            if (SETTINGS_FIELD_TAB[key]) dirtyTabs.add(SETTINGS_FIELD_TAB[key]);
+            continue;
+          }
+          next = Number(text);
+        } else if (typeof next === 'string') {
+          next = next.trim();
+        }
+        if (next !== values[key]) {
+          changes[key] = next;
+          if (SETTINGS_FIELD_TAB[key]) dirtyTabs.add(SETTINGS_FIELD_TAB[key]);
+        }
+      }
+      if ('provider' in changes || 'model' in changes) {
+        changes.provider = String(draft?.provider ?? '').trim();
+        changes.model = String(draft?.model ?? '').trim();
+        dirtyTabs.add('models');
+      }
+      if ('subagentProvider' in changes || 'subagentModel' in changes) {
+        changes.subagentProvider = String(draft?.subagentProvider ?? '').trim();
+        changes.subagentModel = String(draft?.subagentModel ?? '').trim();
+        dirtyTabs.add('models');
+      }
+      if ('fallbackProvider' in changes || 'fallbackModel' in changes) {
+        changes.fallbackProvider = String(draft?.fallbackProvider ?? '').trim();
+        changes.fallbackModel = String(draft?.fallbackModel ?? '').trim();
+        dirtyTabs.add('models');
+      }
+      return {
+        changes,
+        invalidNumber: invalidFields.length > 0,
+        invalidFields,
+        dirtyTabs,
+      };
+    }
+
+    /** Format a live sample date according to `dateFormat` and `timezone`. */
+    function formatPreviewDate(dateFormat, timezone) {
+      const now = new Date();
+      let year = String(now.getUTCFullYear());
+      let month = String(now.getUTCMonth() + 1).padStart(2, '0');
+      let day = String(now.getUTCDate()).padStart(2, '0');
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: String(timezone ?? '').trim() || 'UTC',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).formatToParts(now);
+        const pick = (type) => parts.find((part) => part.type === type)?.value;
+        year = pick('year') ?? year;
+        month = pick('month') ?? month;
+        day = pick('day') ?? day;
+      } catch {
+        // Fall back to UTC while the user is mid-edit on an IANA time zone name.
+      }
+      const fmt = String(dateFormat ?? '').trim() || 'MMDD';
+      return fmt
+        .replace(/YYYY/gu, year)
+        .replace(/YY/gu, year.slice(-2))
+        .replace(/MM/gu, month)
+        .replace(/DD/gu, day);
+    }
+
+    /** Check whether a template contains each required placeholder once without malformed braces. */
+    function isTemplatePreviewValid(template) {
+      const value = String(template ?? '').trim();
+      if (value === '') return false;
+      for (const placeholder of ['date', 'type', 'topic']) {
+        if (value.split(`{${placeholder}}`).length - 1 !== 1) return false;
+      }
+      if (/[{}]/u.test(value.replace(/\{(?:date|type|topic)\}/gu, ''))) return false;
+      if (/\{(?:date|type|topic)\}\{(?:date|type|topic)\}/u.test(value)) return false;
+      return true;
+    }
+
+    /** Render a live example title reflecting current draft format/date/type/language settings. */
+    function buildTitlePreview(draft, t) {
+      const date = formatPreviewDate(draft?.dateFormat, draft?.timezone);
+      const types = Array.isArray(draft?.types) ? draft.types : [];
+      const provisionalKeys = new Set(
+        (Array.isArray(draft?.provisionalRules) ? draft.provisionalRules : [])
+          .map((rule) => String(rule?.key ?? '').trim())
+          .filter((key) => key !== ''),
+      );
+      const firstRegular = types.find((entry) => {
+        const key = String(entry?.key ?? '').trim();
+        return key !== '' && !provisionalKeys.has(key) && (provisionalKeys.size > 0 || entry?.provisional !== true);
+      })?.key?.trim();
+      const firstAny = types.find((entry) => String(entry?.key ?? '').trim() !== '')?.key?.trim();
+      const type = firstRegular || String(draft?.fallbackType ?? '').trim() || firstAny || (draft?.language === 'en' ? 'feat' : '功能');
+      const topic = draft?.language === 'en'
+        ? t('settings.preview.sampleTopicEn')
+        : (draft?.cjkSpacing === true ? t('settings.preview.sampleTopicZhSpaced') : t('settings.preview.sampleTopicZhCompact'));
+      const rawTemplate = String(draft?.template ?? '');
+      const template = rawTemplate.trim() === '' ? '[{date}][{type}] {topic}' : rawTemplate;
+      const text = template
+        .replaceAll('{date}', date)
+        .replaceAll('{type}', type)
+        .replaceAll('{topic}', topic);
+      return { text, valid: isTemplatePreviewValid(rawTemplate) };
+    }
+
+    /** Look up `(provider, model)` in the discovered model catalog. */
+    function findCatalogModel(models, provider, model) {
+      if (!provider || !model || !Array.isArray(models)) return undefined;
+      for (const group of models) {
+        if (group?.id !== provider || !Array.isArray(group.models)) continue;
+        const hit = group.models.find((item) => item?.id === model);
+        if (hit !== undefined) return { group, model: hit };
+      }
+      return undefined;
+    }
+
+    /** Lightweight pub-sub keeping the sidebar modal and plugin detail YAML editor in sync. */
+    function createEventBus() {
+      const listeners = new Set();
+      return {
+        emit(event) { for (const fn of listeners) fn(event); },
+        subscribe(fn) {
+          listeners.add(fn);
+          return () => { listeners.delete(fn); };
+        },
+      };
+    }
+
+    /** Fill `{name}` placeholders of a dictionary entry. */
+    function interpolate(text, vars) {
+      if (vars === undefined || vars === null) return text;
+      return text.replace(/\{(\w+)\}/gu, (_match, name) => (
+        vars[name] === undefined || vars[name] === null ? '' : String(vars[name])
+      ));
+    }
+
+    /**
+     * Plugin UI language override (`uiLanguage`).
+     *
+     * `auto` follows the Harness locale through the bound translator; `zh` or
+     * `en` reads the same registered dictionaries directly, so only this
+     * plugin's menus and dialogs switch language. The value lives in the Host
+     * plugin config, so the Client learns it from the settings route (once on
+     * activation and again whenever settings load or save).
+     */
+    function createUiLanguageStore(fallbackT, dicts) {
+      let current = 'auto';
+      const listeners = new Set();
+      const subscribe = (listener) => {
+        listeners.add(listener);
+        return () => { listeners.delete(listener); };
+      };
+      return {
+        t(key, vars) {
+          const entry = current === 'auto' ? undefined : dicts[current]?.[key];
+          return typeof entry === 'string' ? interpolate(entry, vars) : fallbackT(key, vars);
+        },
+        get: () => current,
+        set(value) {
+          const next = value === 'zh' || value === 'en' ? value : 'auto';
+          if (next === current) return;
+          current = next;
+          for (const listener of listeners) listener();
+        },
+        subscribe,
+        observable: { getSnapshot: () => current, subscribe },
+      };
+    }
+
+    /** Re-render a component whenever the UI language override changes. */
+    function useUiLanguage(uiLanguage) {
+      const [, setRevision] = React.useState(0);
+      React.useEffect(() => (uiLanguage ? uiLanguage.subscribe(() => setRevision((n) => n + 1)) : undefined), [uiLanguage]);
+    }
+
+    /** Read the settings payload once; `null` when the Host route is unreachable. */
+    async function fetchSettings(signal) {
+      const response = await fetch(SETTINGS_ROUTE, {
+        headers: { accept: 'application/json' },
+        ...(signal === undefined ? {} : { signal }),
+      });
+      const payload = await response.json().catch(() => null);
+      return { response, payload };
+    }
+
+    /** Map a failed POST response payload onto a localized error message. */
+    function settingsErrorText(payload, t) {
+      const code = payload?.code;
+      if (code === 'invalid-yaml') return t('yaml.invalidSyntax', { message: cleanHostMessage(payload.message) });
+      if (code === 'invalid-settings') return t('settings.invalid', { message: cleanHostMessage(payload.message) });
+      if (code === 'config-overridden') return t('settings.overridden');
+      if (code === 'editor-unavailable') return t('settings.editorUnavailable');
+      if (code === 'forbidden') return t('menu.forbidden');
+      if (payload === null) return t('settings.needsReload');
+      return t('settings.saveFailed');
+    }
+
+    /** Open the dialog with the Host's current values; a late reply for a replaced request is dropped. */
+    async function loadSettings(store, t, uiLanguage) {
+      const { requestId, signal } = store.beginRequest();
+      const timer = typeof setTimeout === 'function'
+        ? setTimeout(() => {
+          if (store.isCurrent(requestId)) store.set({ requestId, loading: true, error: null });
+        }, 180)
+        : undefined;
+      const stop = () => { if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer); };
+      try {
+        const { response, payload } = await fetchSettings(signal);
+        stop();
+        if (!store.isCurrent(requestId)) return;
+        if (response.ok && payload !== null && typeof payload?.values === 'object') {
+          uiLanguage?.set(payload.values.uiLanguage);
+          store.set({
+            requestId, loading: false, error: null, saving: false, notice: null,
+            editable: payload.editable === true,
+            values: cloneDraft(payload.values),
+            draft: cloneDraft(payload.values),
+            options: payload.options ?? {},
+            activeTab: 'format',
+            provisionalOpen: false,
+            typesOpen: false,
+            advancedOpen: false,
+            customRoutes: { primary: false, subagent: false, fallback: false },
+          });
+          return;
+        }
+        const message = payload?.code === 'forbidden' ? t('menu.forbidden')
+          : payload === null || typeof payload?.code !== 'string' ? t('settings.needsReload')
+            : t('settings.loadFailed');
+        store.set({ requestId, loading: false, error: message });
+      } catch (error) {
+        stop();
+        if (signal?.aborted || error?.name === 'AbortError' || !store.isCurrent(requestId)) return;
+        store.set({ requestId, loading: false, error: t('settings.needsReload') });
+      }
+    }
+
+    /** Pause between read-backs after a save, while the plugin restarts. */
+    function sleep(ms) {
+      return new Promise((resolve) => { setTimeout(resolve, ms); });
+    }
+
+    /**
+     * Save the changed fields from the 4-tab modal. A successful save restarts
+     * the plugin, which can drop the connection before the reply arrives, so a
+     * failed request is verified by reading the values back before it is
+     * reported as an error.
+     */
+    async function saveSettings(store, t, sync, uiLanguage) {
+      const dialog = store.get();
+      if (dialog === null || dialog.saving === true || dialog.editable !== true || dialog.values === undefined) return;
+      const { changes, invalidNumber, invalidFields } = diffSettings(dialog.values, dialog.draft);
+      if (invalidNumber === true) {
+        const firstInvalid = invalidFields[0];
+        const targetTab = SETTINGS_FIELD_TAB[firstInvalid] ?? dialog.activeTab;
+        const needsAdvanced = SETTINGS_ADVANCED_FIELDS.includes(firstInvalid) || firstInvalid === 'uiLanguage';
+        const needsProvisional = firstInvalid === 'provisionalRules';
+        store.set({
+          ...dialog,
+          activeTab: targetTab,
+          typesOpen: dialog.typesOpen === true || needsProvisional,
+          advancedOpen: dialog.advancedOpen === true || needsAdvanced,
+          notice: { kind: 'error', text: t('settings.invalidNumber') },
+        });
+        return;
+      }
+      if (Object.keys(changes).length === 0) return;
+      const { requestId } = dialog;
+      store.set({ ...dialog, saving: true, notice: null });
+      const finish = (patch) => {
+        const now = store.get();
+        if (now !== null && now.requestId === requestId) store.set({ ...now, saving: false, ...patch });
+      };
+      const saved = (payload, restarted) => {
+        const nextValues = cloneDraft(payload.values);
+        uiLanguage?.set(nextValues?.uiLanguage);
+        const now = store.get();
+        const nextOptions = {
+          ...(now?.options ?? {}),
+          ...(Array.isArray(nextValues.types) ? { types: nextValues.types.map((entry) => entry.key) } : {}),
+        };
+        finish({
+          values: nextValues,
+          draft: cloneDraft(nextValues),
+          options: nextOptions,
+          customRoutes: { primary: false, subagent: false, fallback: false },
+          notice: { kind: 'success', text: restarted === false ? t('settings.savedNoChange') : t('settings.saved') },
+        });
+        sync?.emit({ source: 'modal', payload });
+      };
+      try {
+        const response = await fetch(SETTINGS_ROUTE, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify({ changes }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (response.ok && payload?.saved === true && payload.values !== undefined) {
+          saved(payload, payload.restarted);
+          return;
+        }
+        const errMessage = String(payload?.message ?? '');
+        const extra = payload?.code === 'invalid-settings' && /config\.types/u.test(errMessage)
+          ? { activeTab: 'types', typesOpen: true }
+          : payload?.code === 'invalid-settings' && /config\.maxProvisionalRefinements/u.test(errMessage)
+            ? { activeTab: 'types', typesOpen: true }
+            : payload?.code === 'invalid-settings' && /config\.(?:provider|model|subagentRoute|backfill\.fallbackRoute)/u.test(errMessage)
+              ? { activeTab: 'models' }
+              : payload?.code === 'invalid-settings' && /config\.(?:maxInputBytes|maxOutputTokens|timeoutMs|retryAttempts|retryDelayMs|uiLanguage)/u.test(errMessage)
+                ? { activeTab: 'behavior', advancedOpen: true }
+                : payload?.code === 'invalid-settings' && /config\.(?:subagentDelegationLabel|agentsInstructions|roleProbe|backfill\.enabled)/u.test(errMessage)
+                  ? { activeTab: 'behavior' }
+                  : {};
+        finish({ ...extra, notice: { kind: 'error', text: settingsErrorText(payload, t) } });
+      } catch {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          await sleep(500);
+          try {
+            const { response, payload } = await fetchSettings(undefined);
+            if (response.ok && payload?.values !== undefined
+              && Object.keys(changes).every((key) => (key === 'types'
+                ? deepEqual(normalizeSavedTypes(payload.values.types, payload.values.maxProvisionalRefinements), changes.types)
+                : deepEqual(payload.values[key], changes[key])))) {
+              saved(payload, true);
+              return;
+            }
+          } catch { /* the plugin may still be restarting */ }
+        }
+        finish({ notice: { kind: 'error', text: t('settings.saveFailed') } });
+      }
+    }
+
+    /** Text-like control shared by every settings field. */
+    function controlStyle(focused, extra) {
+      return {
+        boxSizing: 'border-box', height: 28, width: '100%', padding: '0 9px', borderRadius: 8,
+        border: `1px solid ${focused ? 'color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent)' : 'var(--dsw-alias-border-l2)'}`,
+        background: 'var(--dsw-alias-interactive-bg-hover)', color: 'var(--dsw-alias-label-primary)',
+        fontSize: 12, lineHeight: '18px', outline: 'none', fontFamily: 'inherit',
+        transition: 'border-color 140ms ease', ...extra,
+      };
+    }
+
+    /** Single-line text input. */
+    function TextControl({ value, onChange, placeholder, mono = false, disabled = false, ariaLabel, inputMode, style }) {
+      const [focused, setFocused] = React.useState(false);
+      return h('input', {
+        type: 'text', value, placeholder, inputMode, disabled, 'aria-label': ariaLabel,
+        spellCheck: false, autoComplete: 'off',
+        onChange: (event) => onChange(event.target.value),
+        onFocus: () => setFocused(true),
+        onBlur: () => setFocused(false),
+        style: controlStyle(focused && !disabled, {
+          ...(mono ? { fontFamily: CODE_FONT } : {}),
+          ...(disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
+          ...style,
+        }),
+      });
+    }
+
+    /** Native select styled to match the text control. */
+    function SelectControl({ value, options, onChange, disabled = false, ariaLabel, style }) {
+      const [focused, setFocused] = React.useState(false);
+      return h('select', {
+        value, disabled, 'aria-label': ariaLabel,
+        onChange: (event) => onChange(event.target.value),
+        onFocus: () => setFocused(true),
+        onBlur: () => setFocused(false),
+        style: controlStyle(focused && !disabled, {
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          ...(disabled ? { opacity: 0.6 } : {}),
+          ...style,
+        }),
+      }, ...options.map((option) => h('option', {
+        key: option.value,
+        value: option.value,
+        style: { background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)' },
+      }, option.label)));
+    }
+
+    /** Switch control; the label sits in the row, so the switch carries `aria-label`. */
+    function ToggleControl({ checked, onChange, disabled = false, ariaLabel }) {
+      return h('button', {
+        type: 'button', role: 'switch', disabled, 'aria-checked': checked, 'aria-label': ariaLabel,
+        onClick: () => { if (!disabled) onChange(!checked); },
         style: {
-          position: 'fixed', inset: 0, zIndex: 1000,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: 'max(24px, var(--dsh-frame-overlay-top, 24px)) 24px',
-          pointerEvents: 'auto', boxSizing: 'border-box',
+          position: 'relative', width: 32, height: 18, padding: 0, border: 0, borderRadius: 999,
+          cursor: disabled ? 'not-allowed' : 'pointer', flex: 'none',
+          opacity: disabled ? 0.55 : 1,
+          background: checked
+            ? 'var(--dsw-alias-state-success-primary)'
+            : 'color-mix(in srgb, var(--dsw-alias-label-primary) 22%, transparent)',
+          transition: 'background-color 140ms ease',
+        },
+      }, h('span', {
+        'aria-hidden': true,
+        style: {
+          position: 'absolute', top: 2, left: checked ? 16 : 2, width: 14, height: 14, borderRadius: '50%',
+          background: '#fff', boxShadow: '0 1px 2px rgba(0, 0, 0, 0.25)',
+          transition: 'left 140ms ease',
+        },
+      }));
+    }
+
+    /** One labelled row of the settings card; `hint` explains the effect in one line. */
+    function SettingRow({ label, hint, topDivider = false, compact = false, controlWidth = 240, singleLineHint = false, children }) {
+      return h('div', {
+        style: {
+          display: 'grid',
+          gridTemplateColumns: compact ? 'minmax(0, 1fr) auto' : `minmax(0, 1fr) minmax(0, ${controlWidth}px)`,
+          alignItems: 'center', gap: 14,
+          padding: '9px 0',
+          ...(topDivider ? { borderTop: '1px solid var(--dsw-alias-border-l1)' } : {}),
         },
       },
-        // Match the native Modal mask: absolute inside the fixed root, dim-only
-        // with no backdrop blur (`--dsw-mask-blur: none` in DSH) so opening the
-        // modal does not trigger a viewport compositor shift.
+        h('div', { style: { minWidth: 0 } },
+          h('div', { style: { fontSize: 12.5, lineHeight: '18px', color: 'var(--dsw-alias-label-primary)' } }, label),
+          hint === undefined ? null : h('div', {
+            style: { fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)', marginTop: 1, ...(singleLineHint ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}) },
+          }, hint),
+        ),
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', minWidth: 0 } }, children),
+      );
+    }
+
+    /**
+     * Titled card grouping related rows. Title always sits outside the card for
+     * visual consistency; when `collapsible` is passed, an inner full-width bar
+     * folds or expands the card body without moving the outer title.
+     */
+    function SettingsSection({ title, count, action = null, note, collapsible, children }) {
+      const [toggleHovered, setToggleHovered] = React.useState(false);
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
         h('div', {
-          'aria-hidden': true,
-          onClick: close,
           style: {
-            position: 'absolute',
-            inset: 'var(--dsh-frame-chrome-top, 0px) 0 0',
-            background: 'var(--dsw-alias-bg-mask-1)',
-          },
-        }),
-        h('div', {
-          ref: dialogRef,
-          tabIndex: -1,
-          role: 'dialog',
-          'aria-modal': true,
-          'aria-label': t('dialog.title'),
-          onClick: (event) => event.stopPropagation(),
-          style: {
-            position: 'relative', zIndex: 1, outline: 'none',
-            width: 'min(500px, 100%)', maxHeight: 'min(84vh, 680px)',
-            display: 'flex', flexDirection: 'column',
-            background: 'var(--dsw-alias-bg-layer-2)',
-            color: 'var(--dsw-alias-label-primary)',
-            border: 0,
-            borderRadius: 'var(--dsw-radius-panel, 16px)',
-            boxShadow: 'var(--dsw-elevation-prominent, 0 0 1px rgba(0, 0, 0, 0.2), 0 12px 32px rgba(0, 0, 0, 0.14))',
-            overflow: 'hidden', userSelect: 'text',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            padding: '0 2px', height: 22,
           },
         },
-          // Header
-          h('div', {
+          h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 } },
+            h('span', {
+              style: { fontSize: 12, lineHeight: '18px', fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' },
+            }, title),
+            count === undefined ? null : h('span', {
+              style: { fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)' },
+            }, String(count)),
+          ),
+          action,
+        ),
+        collapsible === undefined
+          ? h('div', {
             style: {
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-              padding: '14px 16px 12px 20px',
-              borderBottom: '1px solid var(--dsw-alias-border-l1)',
-              flex: 'none',
+              padding: '2px 14px', borderRadius: 12, border: '1px solid var(--dsw-alias-border-l2)',
+              display: 'flex', flexDirection: 'column',
+            },
+          }, children)
+          : h('div', {
+            style: {
+              borderRadius: 12, border: '1px solid var(--dsw-alias-border-l2)',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
             },
           },
-            h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
-              h('span', { style: { color: 'var(--dsw-alias-label-secondary)', flex: 'none' } },
-                glyph(OWN_ICONS['session-title-template.title'], 16)),
-              h('h2', {
-                style: {
-                  margin: 0, fontSize: 15, lineHeight: '22px', fontWeight: 600,
-                  color: 'var(--dsw-alias-label-primary)',
-                },
-              }, t('dialog.title')),
-            ),
-            h(ActionButton, {
-              'aria-label': t('dialog.close'),
-              onClick: close,
-              hoverBackground: 'var(--dsw-alias-interactive-bg-active)',
-              hoverColor: 'var(--dsw-alias-label-primary)',
+            h('button', {
+              type: 'button',
+              'aria-expanded': collapsible.open === true,
+              'aria-label': title,
+              onClick: collapsible.onToggle,
+              onMouseEnter: () => setToggleHovered(true),
+              onMouseLeave: () => setToggleHovered(false),
               style: {
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 28, height: 28, padding: 0, border: 0, borderRadius: '50%',
-                background: 'var(--dsw-alias-interactive-bg-hover)',
-                color: 'var(--dsw-alias-label-secondary)',
-                cursor: 'pointer', flex: 'none',
-                transition: 'background-color 140ms ease, color 140ms ease',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                height: 40, padding: '0 14px', border: 0, width: '100%', boxSizing: 'border-box',
+                background: toggleHovered ? 'var(--dsw-alias-interactive-bg-hover)' : 'transparent',
+                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                transition: 'background-color 140ms ease',
               },
-            }, glyph(CLOSE_PARTS, 13, 1.6)),
+            },
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flex: '1 1 auto' } },
+                h('span', { style: { color: 'var(--dsw-alias-label-tertiary)', flex: 'none' } },
+                  glyph(collapsible.open === true ? CHEVRON_DOWN_PARTS : CHEVRON_RIGHT_PARTS, 13, 1.4)),
+                h('span', {
+                  title: collapsible.summary,
+                  style: {
+                    fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
+                  },
+                }, collapsible.summary),
+              ),
+              h('span', {
+                style: {
+                  fontSize: 11.5, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)',
+                  flex: 'none', whiteSpace: 'nowrap',
+                },
+              }, collapsible.open === true ? collapsible.collapseLabel : collapsible.expandLabel),
+            ),
+            collapsible.open === true ? h('div', {
+              style: {
+                padding: '2px 14px', borderTop: '1px solid var(--dsw-alias-border-l1)',
+                display: 'flex', flexDirection: 'column',
+              },
+            }, children) : null,
           ),
-          // Scrollable body (no redundant footer — header close button, Esc and backdrop dismiss)
+        note === undefined ? null : h('div', {
+          style: { fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)', padding: '0 2px' },
+        }, note),
+      );
+    }
+
+    /**
+     * Style A compact inline footer status: silent when clean, shows a subtle
+     * info-icon reload reminder only when dirty, and switches cleanly to a
+     * success/error status icon after save.
+     */
+    function FooterNotice({ notice, dirty, t }) {
+      if (notice !== null && notice !== undefined) {
+        const isError = notice.kind === 'error';
+        return h('div', {
+          role: isError ? 'alert' : 'status',
+          style: {
+            display: 'inline-flex', alignItems: isError ? 'flex-start' : 'center', gap: 6,
+            fontSize: 12, lineHeight: '17px', minWidth: 0, overflowWrap: 'anywhere',
+            color: isError ? 'var(--dsw-alias-state-warn-label)' : 'var(--dsw-alias-state-success-primary)',
+          },
+        },
+          h('span', {
+            style: {
+              flex: 'none', marginTop: isError ? 1.5 : 0,
+              color: isError ? 'var(--dsw-alias-state-warn-primary)' : 'var(--dsw-alias-state-success-primary)',
+            },
+          }, glyph(isError ? WARNING_PARTS : CHECK_PARTS, 14, isError ? 1.25 : 1.5)),
+          h('span', { style: { minWidth: 0 } }, notice.text),
+        );
+      }
+      if (dirty === true) {
+        return h('div', {
+          role: 'status',
+          style: {
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: 12, lineHeight: '17px', minWidth: 0, overflowWrap: 'anywhere',
+            color: 'var(--dsw-alias-label-secondary)',
+          },
+        },
+          h('span', {
+            style: { flex: 'none', color: 'var(--dsw-alias-label-tertiary)' },
+          }, glyph(INFO_PARTS, 14, 1.25)),
+          h('span', { style: { minWidth: 0 } }, t('settings.restartNote')),
+        );
+      }
+      return h('div', { style: { minWidth: 0 } });
+    }
+
+    /**
+     * Provider/model dropdown backed by `ctx.llm` discovery, with a manual
+     * Provider + Model escape hatch for unlisted or offline endpoints.
+     */
+    function RoutePicker({
+      label,
+      hint,
+      topDivider = false,
+      provider,
+      model,
+      models,
+      manual,
+      emptyLabel,
+      customLabel,
+      selectAriaLabel,
+      providerAriaLabel,
+      modelAriaLabel,
+      disabled,
+      onSelectRoute,
+      onEnterManual,
+      onChangeProvider,
+      onChangeModel,
+      t,
+    }) {
+      const [focused, setFocused] = React.useState(false);
+      const groups = Array.isArray(models) ? models : [];
+      const trimmedProvider = String(provider ?? '').trim();
+      const trimmedModel = String(model ?? '').trim();
+      const hasAny = trimmedProvider !== '' || trimmedModel !== '';
+      const hasBoth = trimmedProvider !== '' && trimmedModel !== '';
+      const inCatalog = findCatalogModel(groups, trimmedProvider, trimmedModel) !== undefined;
+      const halfFilled = hasAny && !hasBoth;
+      const showManual = manual === true || halfFilled || (hasBoth && !inCatalog && groups.length === 0);
+      const selectValue = showManual
+        ? CUSTOM_ROUTE_VALUE
+        : !hasAny
+          ? ''
+          : `${trimmedProvider}${ROUTE_VALUE_SEP}${trimmedModel}`;
+      const showSyntheticCurrent = !showManual && hasBoth && !inCatalog;
+
+      const handleSelect = (event) => {
+        const value = event.target.value;
+        if (value === '') {
+          onSelectRoute('', '');
+        } else if (value === CUSTOM_ROUTE_VALUE) {
+          onEnterManual();
+        } else {
+          const splitAt = value.indexOf(ROUTE_VALUE_SEP);
+          if (splitAt > 0) {
+            onSelectRoute(value.slice(0, splitAt), value.slice(splitAt + 1));
+          }
+        }
+      };
+
+      const optStyle = { background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)' };
+
+      return h('div', {
+        style: {
+          display: 'flex', flexDirection: 'column', padding: '9px 0', gap: 10,
+          ...(topDivider ? { borderTop: '1px solid var(--dsw-alias-border-l1)' } : {}),
+        },
+      },
+        h('div', {
+          style: {
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 240px)',
+            alignItems: 'center', gap: 14,
+          },
+        },
+          h('div', { style: { minWidth: 0 } },
+            h('div', { style: { fontSize: 12.5, lineHeight: '18px', color: 'var(--dsw-alias-label-primary)' } }, label),
+            hint === undefined ? null : h('div', {
+              style: { fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-label-tertiary)', marginTop: 1 },
+            }, hint),
+          ),
+          h('select', {
+            value: selectValue,
+            disabled,
+            'aria-label': selectAriaLabel,
+            onChange: handleSelect,
+            onFocus: () => setFocused(true),
+            onBlur: () => setFocused(false),
+            style: controlStyle(focused && !disabled, {
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              ...(disabled ? { opacity: 0.6 } : {}),
+            }),
+          },
+            h('option', { value: '', style: optStyle }, emptyLabel),
+            showSyntheticCurrent
+              ? h('option', { value: `${trimmedProvider}${ROUTE_VALUE_SEP}${trimmedModel}`, style: optStyle }, `${trimmedProvider} / ${trimmedModel}`)
+              : null,
+            ...groups.map((group) => h('optgroup', { key: group.id, label: group.name },
+              ...(Array.isArray(group.models) ? group.models : []).map((entry) => h('option', {
+                key: `${group.id}/${entry.id}`,
+                value: `${group.id}${ROUTE_VALUE_SEP}${entry.id}`,
+                style: optStyle,
+              }, entry.name && entry.name !== entry.id ? `${entry.name} (${entry.id})` : entry.id)),
+            )),
+            h('option', { value: CUSTOM_ROUTE_VALUE, style: optStyle }, customLabel),
+          ),
+        ),
+        showManual ? h('div', {
+          style: {
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8,
+            paddingTop: 8, borderTop: '1px solid var(--dsw-alias-border-l1)',
+          },
+        },
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 } },
+            h('span', { style: { fontSize: 11, lineHeight: '15px', color: 'var(--dsw-alias-label-tertiary)' } }, t('settings.provider')),
+            h(TextControl, {
+              value: provider, mono: true, disabled,
+              placeholder: t('settings.provider.placeholder'),
+              ariaLabel: providerAriaLabel,
+              onChange: onChangeProvider,
+            }),
+          ),
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 } },
+            h('span', { style: { fontSize: 11, lineHeight: '15px', color: 'var(--dsw-alias-label-tertiary)' } }, t('settings.model')),
+            h(TextControl, {
+              value: model, mono: true, disabled,
+              placeholder: t('settings.model.placeholder'),
+              ariaLabel: modelAriaLabel,
+              onChange: onChangeModel,
+            }),
+          ),
+        ) : null,
+      );
+    }
+
+    /** Read-only alert banner shared by both settings surfaces when `configEditor` is unavailable. */
+    function ReadOnlyBanner({ t }) {
+      return h('div', {
+        role: 'alert',
+        style: {
+          display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 10,
+          background: 'var(--dsw-alias-state-warn-tertiary)',
+          border: '1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent)',
+          color: 'var(--dsw-alias-label-primary)', fontSize: 12, lineHeight: '18px',
+        },
+      },
+        h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)', marginTop: 1 } }, glyph(WARNING_PARTS, 16)),
+        h('span', null, t('settings.editorUnavailable')),
+      );
+    }
+
+    /** Four-tab naming settings modal rendered in `shell.overlay`. */
+    function TitleSettingsDialog({ store, t, sync, uiLanguage }) {
+      useUiLanguage(uiLanguage);
+      const [dialog, setDialog] = React.useState(() => store.get());
+      const dialogRef = React.useRef(null);
+      const bodyRef = React.useRef(null);
+      React.useEffect(() => store.subscribe(() => setDialog(store.get())), [store]);
+      const open = dialog !== null;
+      const close = () => store.close();
+      useModalBehavior(open, dialogRef, close);
+      const currentTab = dialog?.activeTab ?? 'format';
+      React.useEffect(() => {
+        if (bodyRef.current && typeof bodyRef.current.scrollTop === 'number') {
+          bodyRef.current.scrollTop = 0;
+        }
+      }, [currentTab]);
+      if (!open) return null;
+
+      const {
+        loading, error, values, draft, options, editable, saving, notice,
+        activeTab = 'format',
+        provisionalOpen = false,
+        typesOpen = false,
+        advancedOpen = false,
+        customRoutes = { primary: false, subagent: false, fallback: false },
+      } = dialog;
+
+      const patchDialog = (patchOrFn) => {
+        const now = store.get();
+        if (now === null) return;
+        const patch = typeof patchOrFn === 'function' ? patchOrFn(now) : patchOrFn;
+        store.set({ ...now, ...patch });
+      };
+      const setField = (key, value) => patchDialog((now) => ({
+        draft: { ...now.draft, [key]: value },
+        notice: null,
+      }));
+      const setFields = (fields, extra = {}) => patchDialog((now) => ({
+        draft: { ...now.draft, ...fields },
+        notice: null,
+        ...(typeof extra === 'function' ? extra(now) : extra),
+      }));
+
+      const diff = values !== undefined
+        ? diffSettings(values, draft)
+        : { changes: {}, invalidNumber: false, invalidFields: [], dirtyTabs: new Set() };
+      const dirty = diff.invalidNumber === true || Object.keys(diff.changes).length > 0;
+      const locked = editable !== true || saving === true;
+      const canSave = editable === true && dirty && saving !== true;
+
+      const dateOptions = SETTINGS_DATE_FORMATS.includes(draft?.dateFormat) || draft === undefined
+        ? SETTINGS_DATE_FORMATS : [draft.dateFormat, ...SETTINGS_DATE_FORMATS];
+      const draftTypes = Array.isArray(draft?.types) ? draft.types : [];
+      const provisionalRules = Array.isArray(draft?.provisionalRules) ? draft.provisionalRules : [];
+      const availableTypeKeys = (() => {
+        const seen = new Set();
+        const keys = [];
+        for (const entry of draftTypes) {
+          const key = String(entry?.key ?? '').trim();
+          if (key !== '' && !seen.has(key)) { seen.add(key); keys.push(key); }
+        }
+        return keys;
+      })();
+      const fallbackTypeChoices = (() => {
+        const keys = [...availableTypeKeys];
+        const current = String(draft?.fallbackType ?? '').trim();
+        if (current !== '' && !keys.includes(current)) keys.unshift(current);
+        return keys;
+      })();
+      const usedProvisionalKeys = new Set(provisionalRules.map((rule) => String(rule?.key ?? '').trim()).filter(Boolean));
+      const nextUnusedProvisionalKey = availableTypeKeys.find((key) => !usedProvisionalKeys.has(key));
+      const defaultTypes = Array.isArray(options?.defaultTypes) ? options.defaultTypes : [];
+      const typesMatchDefaults = defaultTypes.length >= 2
+        && deepEqual(normalizeVocabularyForDiff(draftTypes), normalizeVocabularyForDiff(defaultTypes));
+      const modelCatalog = Array.isArray(options?.models) ? options.models : [];
+      const presetOptions = options?.presets === undefined ? [] : [
+        { value: 'zh', label: t('settings.preset.zh') },
+        { value: 'en', label: t('settings.preset.en') },
+      ];
+      const activePreset = draft?.language === 'en' && draft?.cjkSpacing === false ? 'en' : 'zh';
+
+      const updateTypeRow = (index, patch) => {
+        patchDialog((now) => {
+          const currentTypes = Array.isArray(now.draft?.types) ? now.draft.types : [];
+          const prevEntry = currentTypes[index];
+          const nextTypes = currentTypes.map((entry, idx) => (idx === index ? { ...entry, ...patch } : entry));
+          const nextDraft = { ...now.draft, types: nextTypes };
+          if ('key' in patch && prevEntry !== undefined) {
+            const oldKey = String(prevEntry.key ?? '').trim();
+            const newKey = String(patch.key ?? '').trim();
+            if (oldKey !== '' && newKey !== '') {
+              if (String(now.draft?.fallbackType ?? '').trim() === oldKey) {
+                nextDraft.fallbackType = newKey;
+              }
+              if (Array.isArray(now.draft?.provisionalRules)) {
+                nextDraft.provisionalRules = now.draft.provisionalRules.map((rule) => (
+                  String(rule?.key ?? '').trim() === oldKey ? { ...rule, key: newKey } : rule
+                ));
+              }
+            }
+          }
+          return { draft: nextDraft, notice: null };
+        });
+      };
+
+      const updateTypePolicy = (index, patch) => {
+        if (locked) return;
+        patchDialog((now) => {
+          const currentTypes = Array.isArray(now.draft?.types) ? now.draft.types : [];
+          const current = currentTypes[index] ?? {};
+          const provisional = patch.provisional === undefined ? current.provisional === true : patch.provisional === true;
+          const defaultLimit = Number.isInteger(now.values?.maxProvisionalRefinements) && now.values.maxProvisionalRefinements > 0
+            ? now.values.maxProvisionalRefinements : 4;
+          const next = {
+            ...current,
+            provisional,
+            ...(provisional ? { maxRefinements: String(patch.maxRefinements ?? current.maxRefinements ?? defaultLimit) } : {}),
+          };
+          return { draft: { ...now.draft, types: currentTypes.map((entry, idx) => idx === index ? next : entry) }, notice: null };
+        });
+      };
+
+      const applyNamingPreset = (presetId) => {
+        if (locked) return;
+        const preset = options?.presets?.[presetId];
+        if (preset === undefined) return;
+        patchDialog((now) => ({
+          draft: {
+            ...now.draft,
+            template: presetId === 'en' ? '[{date}] {type}: {topic}' : '[{date}][{type}] {topic}',
+            language: preset.language,
+            cjkSpacing: preset.cjkSpacing,
+            fallbackType: preset.fallbackType,
+            types: preset.types.map(cloneTypeEntry),
+          },
+          activeTab: 'format',
+          typesOpen: false,
+          notice: null,
+        }));
+      };
+
+      const removeTypeRow = (index) => {
+        if (locked) return;
+        patchDialog((now) => {
+          const currentTypes = Array.isArray(now.draft?.types) ? now.draft.types : [];
+          if (currentTypes.length <= 2) return {};
+          const removedKey = String(currentTypes[index]?.key ?? '').trim();
+          const nextTypes = currentTypes.filter((_, idx) => idx !== index);
+          const nextDraft = { ...now.draft, types: nextTypes };
+          if (removedKey !== '') {
+            if (String(now.draft?.fallbackType ?? '').trim() === removedKey) {
+              const replacement = nextTypes.find((entry) => String(entry?.key ?? '').trim() !== '')?.key?.trim();
+              if (replacement !== undefined) nextDraft.fallbackType = replacement;
+            }
+            if (Array.isArray(now.draft?.provisionalRules)) {
+              nextDraft.provisionalRules = now.draft.provisionalRules.filter(
+                (rule) => String(rule?.key ?? '').trim() !== removedKey,
+              );
+            }
+          }
+          return { draft: nextDraft, notice: null };
+        });
+      };
+
+      const addTypeRow = () => {
+        if (locked) return;
+        patchDialog((now) => {
+          const currentTypes = Array.isArray(now.draft?.types) ? now.draft.types : [];
+          return {
+            draft: { ...now.draft, types: [...currentTypes, { key: '', hint: '', provisional: false }] },
+            notice: null,
+          };
+        });
+      };
+
+      const restoreDefaultTypes = () => {
+        if (locked || defaultTypes.length < 2) return;
+        patchDialog((now) => {
+          const restored = defaultTypes.map(cloneTypeEntry);
+          const restoredKeys = new Set(restored.map((entry) => entry.key.trim()));
+          const currentFallback = String(now.draft?.fallbackType ?? '').trim();
+          const nextFallback = restoredKeys.has(currentFallback)
+            ? currentFallback
+            : (restored.find((entry) => entry.provisional === true)?.key ?? restored[0].key);
+          const currentRules = Array.isArray(now.draft?.provisionalRules) ? now.draft.provisionalRules : [];
+          const nextRules = currentRules.filter((rule) => restoredKeys.has(String(rule?.key ?? '').trim()));
+          return {
+            draft: {
+              ...now.draft,
+              types: restored,
+              fallbackType: nextFallback,
+              provisionalRules: nextRules,
+            },
+            notice: null,
+          };
+        });
+      };
+
+      const updateProvisionalRule = (index, patch) => {
+        if (locked) return;
+        patchDialog((now) => {
+          const currentRules = Array.isArray(now.draft?.provisionalRules) ? now.draft.provisionalRules : [];
+          const nextRules = currentRules.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule));
+          return { draft: { ...now.draft, provisionalRules: nextRules }, notice: null };
+        });
+      };
+
+      const removeProvisionalRule = (index) => {
+        if (locked) return;
+        patchDialog((now) => {
+          const currentRules = Array.isArray(now.draft?.provisionalRules) ? now.draft.provisionalRules : [];
+          return {
+            draft: { ...now.draft, provisionalRules: currentRules.filter((_, idx) => idx !== index) },
+            notice: null,
+          };
+        });
+      };
+
+      const addProvisionalRule = () => {
+        if (locked || nextUnusedProvisionalKey === undefined) return;
+        patchDialog((now) => {
+          const currentRules = Array.isArray(now.draft?.provisionalRules) ? now.draft.provisionalRules : [];
+          const defaultCount = Number.isInteger(now.values?.maxProvisionalRefinements) && now.values.maxProvisionalRefinements > 0
+            ? String(now.values.maxProvisionalRefinements)
+            : '4';
+          return {
+            draft: {
+              ...now.draft,
+              provisionalRules: [...currentRules, { key: nextUnusedProvisionalKey, maxRefinements: defaultCount }],
+            },
+            notice: null,
+          };
+        });
+      };
+
+      // Sticky segmented tab bar rendered in ModalFrame's subHeader.
+      const subHeader = loading === true || (error !== null && error !== undefined) || draft === undefined
+        ? null
+        : h('div', {
+          role: 'tablist',
+          'aria-label': t('settings.title'),
+          style: {
+            display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 4,
+            padding: 3, borderRadius: 10,
+            background: 'var(--dsw-alias-interactive-bg-hover)',
+            border: '1px solid var(--dsw-alias-border-l1)',
+          },
+        }, ...SETTINGS_TABS.map((tabId) => {
+          const selected = activeTab === tabId;
+          const tabDirty = diff.dirtyTabs.has(tabId);
+          return h('button', {
+            key: tabId,
+            type: 'button',
+            role: 'tab',
+            'aria-selected': selected,
+            onClick: () => patchDialog({ activeTab: tabId }),
+            style: {
+              position: 'relative',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              height: 28, padding: '0 8px', border: 0, borderRadius: 7,
+              fontSize: 12.5, lineHeight: '18px', fontWeight: selected ? 600 : 500,
+              cursor: 'pointer', fontFamily: 'inherit',
+              background: selected ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
+              color: selected ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-secondary)',
+              boxShadow: selected ? '0 1px 2px rgba(0, 0, 0, 0.08)' : 'none',
+              transition: 'background-color 140ms ease, color 140ms ease',
+            },
+          },
+            h('span', null, t(`settings.tab.${tabId}`)),
+            tabDirty ? h('span', {
+              'aria-hidden': true,
+              style: {
+                position: 'absolute', top: '50%', right: 10, transform: 'translateY(-50%)',
+                width: 5, height: 5, borderRadius: '50%', pointerEvents: 'none',
+                background: 'var(--dsw-alias-state-warn-primary)',
+              },
+            }) : null,
+          );
+        }));
+
+      const renderFormatTab = () => {
+        const preview = buildTitlePreview(draft, t);
+        return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+          // Live title preview card (locked height so typing never shifts rows below)
           h('div', {
-            style: { padding: '14px 20px 18px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 },
-          }, body),
+            style: {
+              padding: '10px 14px', borderRadius: 12,
+              background: 'var(--dsw-alias-interactive-bg-hover)',
+              border: `1px solid ${preview.valid ? 'var(--dsw-alias-border-l1)' : 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 40%, transparent)'}`,
+              display: 'flex', flexDirection: 'column', gap: 4,
+            },
+          },
+            h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, height: 16 } },
+              h('span', {
+                style: { fontSize: 11, lineHeight: '16px', fontWeight: 500, color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'nowrap' },
+              }, t('settings.preview')),
+              preview.valid ? null : h('span', {
+                style: { fontSize: 11, lineHeight: '16px', color: 'var(--dsw-alias-state-warn-label)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+              }, t('settings.preview.invalidTemplate')),
+            ),
+            h('div', {
+              'data-testid': 'settings-preview',
+              title: preview.text,
+              style: {
+                height: 20, fontSize: 13.5, lineHeight: '20px', fontWeight: 500,
+                color: 'var(--dsw-alias-label-primary)',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              },
+            }, preview.text),
+          ),
+          h(SettingsSection, { title: t('settings.group.format') },
+            h(SettingRow, { label: t('settings.preset'), hint: t('settings.preset.hint') },
+              h(SelectControl, {
+                value: activePreset, disabled: locked, ariaLabel: t('settings.preset'),
+                options: presetOptions,
+                onChange: applyNamingPreset,
+              })),
+            h(SettingRow, { label: t('settings.template'), hint: t('settings.template.hint'), topDivider: true },
+              h(TextControl, {
+                value: draft.template ?? '', mono: true, disabled: locked,
+                ariaLabel: t('settings.template'),
+                onChange: (value) => setField('template', value),
+              })),
+            h(SettingRow, { label: t('settings.language'), hint: t('settings.language.hint'), topDivider: true },
+              h(SelectControl, {
+                value: draft.language, disabled: locked, ariaLabel: t('settings.language'),
+                options: [{ value: 'zh', label: t('settings.language.zh') }, { value: 'en', label: t('settings.language.en') }],
+                onChange: (value) => setField('language', value),
+              })),
+            h(SettingRow, { label: t('settings.topicLength'), hint: t('settings.topicLength.hint'), topDivider: true },
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, width: '100%' } },
+                h(TextControl, {
+                  value: String(draft.topicMinChars), inputMode: 'numeric', disabled: locked, ariaLabel: t('settings.topicMin'),
+                  onChange: (value) => setField('topicMinChars', value),
+                }),
+                h('span', { 'aria-hidden': true, style: { color: 'var(--dsw-alias-label-tertiary)' } }, '–'),
+                h(TextControl, {
+                  value: String(draft.topicMaxChars), inputMode: 'numeric', disabled: locked, ariaLabel: t('settings.topicMax'),
+                  onChange: (value) => setField('topicMaxChars', value),
+                }),
+              )),
+            h(SettingRow, { label: t('settings.cjkSpacing'), hint: t('settings.cjkSpacing.hint'), topDivider: true, compact: true },
+              h(ToggleControl, { checked: draft.cjkSpacing === true, disabled: locked, ariaLabel: t('settings.cjkSpacing'), onChange: (value) => setField('cjkSpacing', value) })),
+          ),
+          h(SettingsSection, { title: t('settings.group.date') },
+            h(SettingRow, { label: t('settings.dateFormat'), hint: t('settings.dateFormat.hint') },
+              h(SelectControl, {
+                value: draft.dateFormat, disabled: locked, ariaLabel: t('settings.dateFormat'),
+                options: dateOptions.map((value) => ({ value, label: value })),
+                onChange: (value) => setField('dateFormat', value),
+              })),
+            h(SettingRow, { label: t('settings.timezone'), hint: t('settings.timezone.hint'), topDivider: true },
+              h(TextControl, { value: draft.timezone, mono: true, disabled: locked, ariaLabel: t('settings.timezone'), onChange: (value) => setField('timezone', value) })),
+          ),
+        );
+      };
+
+      const renderTypesTab = () => {
+        const typeKeysSummary = draftTypes
+          .map((entry) => String(entry?.key ?? '').trim())
+          .filter(Boolean)
+          .join(' · ') || t('settings.types.emptySummary');
+        const canDelete = (index) => !locked && draftTypes.length > 2;
+        return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+          h(SettingsSection, { title: t('settings.group.typePolicy') },
+            h(SettingRow, { label: t('settings.fallbackPolicy'), hint: t('settings.fallbackPolicy.detail'), controlWidth: 240, singleLineHint: true },
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, width: '100%' } },
+                h(SelectControl, {
+                  value: draft.fallbackType, disabled: locked, ariaLabel: t('settings.fallbackType'),
+                  options: fallbackTypeChoices.map((key) => ({ value: key, label: key })),
+                  onChange: (value) => setField('fallbackType', value),
+                  style: { flex: 1, minWidth: 110 },
+                }),
+                h(SelectControl, {
+                  value: draft.fallbackTruncation ?? 'natural', disabled: locked, ariaLabel: t('settings.fallbackTruncation'),
+                  options: [
+                    { value: 'natural', label: t('settings.fallbackTruncation.natural') },
+                    { value: 'hard', label: t('settings.fallbackTruncation.hard') },
+                  ],
+                  onChange: (value) => setField('fallbackTruncation', value),
+                  style: { flex: 1, minWidth: 110 },
+                }),
+              )),
+          ),
+          h(SettingsSection, {
+            title: t('settings.group.types'),
+            count: draftTypes.length,
+            collapsible: {
+              open: typesOpen,
+              onToggle: () => patchDialog((now) => ({ typesOpen: !now.typesOpen })),
+              summary: typeKeysSummary,
+              expandLabel: t('settings.section.expand'),
+              collapseLabel: t('settings.section.collapse'),
+            },
+            action: defaultTypes.length < 2 || typesMatchDefaults ? null : h(ActionButton, {
+              onClick: restoreDefaultTypes,
+              disabled: locked,
+              style: { height: 22, padding: '0 8px', border: 0, borderRadius: 6, fontSize: 11.5, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.5 : 1 },
+            }, t('settings.types.restoreDefaults')),
+          },
+              h('div', { style: { display: 'grid', gridTemplateColumns: TYPE_TABLE_GRID, alignItems: 'center', gap: 7, padding: '8px 0 4px', fontSize: 11, lineHeight: '15px', color: 'var(--dsw-alias-label-tertiary)' } },
+              h('span', null, t('settings.types.colKey')),
+              h('span', null, t('settings.types.colHint')),
+              h('span', { style: { textAlign: 'center' } }, t('settings.types.colProvisional')),
+              h('span', { style: { textAlign: 'center' } }, t('settings.types.colCount')),
+              h('span', { style: { textAlign: 'center' } }, t('settings.types.colRemove'))),
+            ...draftTypes.map((entry, index) => h('div', { key: index, style: { display: 'grid', gridTemplateColumns: TYPE_TABLE_GRID, alignItems: 'center', gap: 7, padding: '6px 0', borderTop: index === 0 ? 'none' : '1px solid var(--dsw-alias-border-l1)' } },
+              h(TextControl, { value: entry.key, disabled: locked, placeholder: t('settings.types.keyPlaceholder'), ariaLabel: t('settings.types.keyAria', { index: index + 1 }), onChange: (value) => updateTypeRow(index, { key: value }) }),
+              h(TextControl, { value: entry.hint, disabled: locked, placeholder: t('settings.types.hintPlaceholder'), ariaLabel: t('settings.types.hintAria', { index: index + 1 }), onChange: (value) => updateTypeRow(index, { hint: value }) }),
+              h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+                h(ToggleControl, { checked: entry.provisional === true, disabled: locked, ariaLabel: t('settings.types.provisionalAria', { key: entry.key || String(index + 1) }), onChange: (value) => updateTypePolicy(index, { provisional: value }) })),
+              h(TextControl, { value: entry.provisional === true ? String(entry.maxRefinements ?? values?.maxProvisionalRefinements ?? 4) : '', inputMode: 'numeric', disabled: locked || entry.provisional !== true, placeholder: '4', ariaLabel: t('settings.types.countAria', { key: entry.key || String(index + 1) }), style: { textAlign: 'center' }, onChange: (value) => updateTypePolicy(index, { maxRefinements: value }) }),
+              h(ActionButton, { onClick: () => removeTypeRow(index), disabled: !canDelete(index), 'aria-label': t('settings.types.removeAria', { key: entry.key || String(index + 1) }), hoverColor: 'var(--dsw-alias-label-primary)', style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 0, borderRadius: 7, color: 'var(--dsw-alias-label-tertiary)', cursor: canDelete(index) ? 'pointer' : 'default', opacity: canDelete(index) ? 1 : 0.35 } }, glyph(CLOSE_PARTS, 11, 1.5)),
+            )),
+            h('div', { style: { padding: '8px 0', borderTop: '1px solid var(--dsw-alias-border-l1)', display: 'flex', alignItems: 'center' } },
+              h(ActionButton, { onClick: addTypeRow, disabled: locked, style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', width: 96, gap: 5, height: 26, padding: '0 6px', borderRadius: 7, border: '1px dashed var(--dsw-alias-border-l2)', fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.5 : 1 } }, glyph(PLUS_PARTS, 12, 1.4), t('settings.types.add'))),
+          ),
+        );
+      };
+
+      const renderModelsTab = () => h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+        h(SettingsSection, { title: t('settings.group.models') },
+          h(RoutePicker, {
+            label: t('settings.primaryRoute'),
+            hint: t('settings.primaryRoute.hint'),
+            provider: draft.provider ?? '',
+            model: draft.model ?? '',
+            models: modelCatalog,
+            manual: customRoutes.primary === true,
+            emptyLabel: t('settings.route.followSession'),
+            customLabel: t('settings.route.custom'),
+            selectAriaLabel: t('settings.primaryRoute'),
+            providerAriaLabel: t('settings.provider'),
+            modelAriaLabel: t('settings.model'),
+            disabled: locked,
+            onSelectRoute: (provider, model) => setFields(
+              { provider, model },
+              (now) => ({ customRoutes: { ...(now.customRoutes ?? {}), primary: false } }),
+            ),
+            onEnterManual: () => patchDialog((now) => ({ customRoutes: { ...(now.customRoutes ?? {}), primary: true } })),
+            onChangeProvider: (value) => setField('provider', value),
+            onChangeModel: (value) => setField('model', value),
+            t,
+          }),
+          h(RoutePicker, {
+            label: t('settings.subagentRoute'),
+            hint: t('settings.subagentRoute.hint'),
+            topDivider: true,
+            provider: draft.subagentProvider ?? '',
+            model: draft.subagentModel ?? '',
+            models: modelCatalog,
+            manual: customRoutes.subagent === true,
+            emptyLabel: t('settings.route.followMain'),
+            customLabel: t('settings.route.custom'),
+            selectAriaLabel: t('settings.subagentRoute'),
+            providerAriaLabel: t('settings.subagentProvider'),
+            modelAriaLabel: t('settings.subagentModel'),
+            disabled: locked,
+            onSelectRoute: (subagentProvider, subagentModel) => setFields(
+              { subagentProvider, subagentModel },
+              (now) => ({ customRoutes: { ...(now.customRoutes ?? {}), subagent: false } }),
+            ),
+            onEnterManual: () => patchDialog((now) => ({ customRoutes: { ...(now.customRoutes ?? {}), subagent: true } })),
+            onChangeProvider: (value) => setField('subagentProvider', value),
+            onChangeModel: (value) => setField('subagentModel', value),
+            t,
+          }),
+          h(RoutePicker, {
+            label: t('settings.fallbackRoute'),
+            hint: t('settings.fallbackRoute.hint'),
+            topDivider: true,
+            provider: draft.fallbackProvider ?? '',
+            model: draft.fallbackModel ?? '',
+            models: modelCatalog,
+            manual: customRoutes.fallback === true,
+            emptyLabel: t('settings.route.none'),
+            customLabel: t('settings.route.custom'),
+            selectAriaLabel: t('settings.fallbackRoute'),
+            providerAriaLabel: t('settings.fallbackProvider'),
+            modelAriaLabel: t('settings.fallbackModel'),
+            disabled: locked,
+            onSelectRoute: (fallbackProvider, fallbackModel) => setFields(
+              { fallbackProvider, fallbackModel },
+              (now) => ({ customRoutes: { ...(now.customRoutes ?? {}), fallback: false } }),
+            ),
+            onEnterManual: () => patchDialog((now) => ({ customRoutes: { ...(now.customRoutes ?? {}), fallback: true } })),
+            onChangeProvider: (value) => setField('fallbackProvider', value),
+            onChangeModel: (value) => setField('fallbackModel', value),
+            t,
+          }),
         ),
       );
 
-      if (typeof document !== 'undefined' && document.body && typeof ReactDOM?.createPortal === 'function') {
-        return ReactDOM.createPortal(modal, document.body);
+      const renderBehaviorTab = () => h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+        h(SettingsSection, { title: t('settings.group.behavior') },
+          h(SettingRow, { label: t('settings.uiLanguage'), hint: t('settings.uiLanguage.hint') },
+            h(SelectControl, { value: draft.uiLanguage ?? 'auto', disabled: locked, ariaLabel: t('settings.uiLanguage'), options: [
+              { value: 'auto', label: t('settings.uiLanguage.auto') },
+              { value: 'zh', label: t('settings.uiLanguage.zh') },
+              { value: 'en', label: t('settings.uiLanguage.en') },
+            ], onChange: (value) => setField('uiLanguage', value) })),
+          h(SettingRow, { label: t('settings.subagentDelegationLabel'), hint: t('settings.subagentDelegationLabel.hint'), topDivider: true, compact: true },
+            h(ToggleControl, { checked: draft.subagentDelegationLabel !== false, disabled: locked, ariaLabel: t('settings.subagentDelegationLabel'), onChange: (value) => setField('subagentDelegationLabel', value) })),
+          h(SettingRow, { label: t('settings.agentsInstructions'), hint: t('settings.agentsInstructions.hint'), topDivider: true, compact: true },
+            h(ToggleControl, { checked: draft.agentsInstructions === true, disabled: locked, ariaLabel: t('settings.agentsInstructions'), onChange: (value) => setField('agentsInstructions', value) })),
+          h(SettingRow, { label: t('settings.agentsInstructionsMaxBytes'), hint: t('settings.agentsInstructionsMaxBytes.hint'), topDivider: true, controlWidth: 120 },
+            h(TextControl, {
+              value: String(draft.agentsInstructionsMaxBytes ?? ''), inputMode: 'numeric', disabled: locked,
+              ariaLabel: t('settings.agentsInstructionsMaxBytes'),
+              onChange: (value) => setField('agentsInstructionsMaxBytes', value),
+            })),
+          h(SettingRow, { label: t('settings.roleProbe'), hint: t('settings.roleProbe.hint'), topDivider: true, compact: true },
+            h(ToggleControl, { checked: draft.roleProbe === true, disabled: locked, ariaLabel: t('settings.roleProbe'), onChange: (value) => setField('roleProbe', value) })),
+          h(SettingRow, { label: t('settings.backfill'), hint: t('settings.backfill.hint'), topDivider: true, compact: true },
+            h(ToggleControl, { checked: draft.backfill === true, disabled: locked, ariaLabel: t('settings.backfill'), onChange: (value) => setField('backfill', value) })),
+        ),
+        h(SettingsSection, {
+          title: t('settings.group.advanced'),
+          collapsible: {
+            open: advancedOpen,
+            onToggle: () => patchDialog((now) => ({ advancedOpen: !now.advancedOpen })),
+            summary: t('settings.group.advanced.hint'),
+            expandLabel: t('settings.section.expand'),
+            collapseLabel: t('settings.section.collapse'),
+          },
+        },
+          h(SettingRow, { label: t('settings.maxInputBytes'), hint: t('settings.maxInputBytes.hint'), controlWidth: 120 },
+            h(TextControl, {
+              value: String(draft.maxInputBytes ?? ''), inputMode: 'numeric', disabled: locked,
+              ariaLabel: t('settings.maxInputBytes'),
+              onChange: (value) => setField('maxInputBytes', value),
+            })),
+          h(SettingRow, { label: t('settings.maxOutputTokens'), hint: t('settings.maxOutputTokens.hint'), topDivider: true, controlWidth: 120 },
+            h(TextControl, {
+              value: String(draft.maxOutputTokens ?? ''), inputMode: 'numeric', disabled: locked,
+              ariaLabel: t('settings.maxOutputTokens'),
+              onChange: (value) => setField('maxOutputTokens', value),
+            })),
+          h(SettingRow, { label: t('settings.timeoutMs'), hint: t('settings.timeoutMs.hint'), topDivider: true, controlWidth: 120 },
+            h(TextControl, {
+              value: String(draft.timeoutMs ?? ''), inputMode: 'numeric', disabled: locked,
+              ariaLabel: t('settings.timeoutMs'),
+              onChange: (value) => setField('timeoutMs', value),
+            })),
+          h(SettingRow, { label: t('settings.retryAttempts'), hint: t('settings.retryAttempts.hint'), topDivider: true, controlWidth: 120 },
+            h(TextControl, {
+              value: String(draft.retryAttempts ?? ''), inputMode: 'numeric', disabled: locked,
+              ariaLabel: t('settings.retryAttempts'),
+              onChange: (value) => setField('retryAttempts', value),
+            })),
+          h(SettingRow, { label: t('settings.retryDelayMs'), hint: t('settings.retryDelayMs.hint'), topDivider: true, controlWidth: 120 },
+            h(TextControl, {
+              value: String(draft.retryDelayMs ?? ''), inputMode: 'numeric', disabled: locked,
+              ariaLabel: t('settings.retryDelayMs'),
+              onChange: (value) => setField('retryDelayMs', value),
+            })),
+        ),
+      );
+
+      const form = () => h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+        editable === true ? null : h(ReadOnlyBanner, { t }),
+        activeTab === 'format' ? renderFormatTab()
+          : activeTab === 'types' ? renderTypesTab()
+            : activeTab === 'models' ? renderModelsTab()
+              : renderBehaviorTab(),
+      );
+
+      // Pinned footer: Style A inline reload/status notice on the left, fixed-width actions on the right.
+      const footer = loading === true || (error !== null && error !== undefined) ? null : h('div', {
+        style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 34 },
+      },
+        h(FooterNotice, { notice, dirty, t }),
+        h('div', { style: { display: 'flex', gap: 8, flex: 'none' } },
+          h(ActionButton, {
+            onClick: () => patchDialog({
+              draft: cloneDraft(values),
+              notice: null,
+              customRoutes: { primary: false, subagent: false, fallback: false },
+            }),
+            disabled: !dirty || saving === true,
+            style: {
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              height: 28, minWidth: 56, padding: '0 12px', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 8,
+              color: 'var(--dsw-alias-label-secondary)', fontSize: 12, cursor: dirty ? 'pointer' : 'default',
+              opacity: dirty && saving !== true ? 1 : 0.45,
+            },
+          }, t('settings.reset')),
+          h(ActionButton, {
+            onClick: () => { void saveSettings(store, t, sync, uiLanguage); },
+            disabled: !canSave,
+            hoverBackground: 'color-mix(in srgb, var(--dsw-alias-label-primary) 88%, transparent)',
+            style: {
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              height: 28, minWidth: 68, padding: '0 14px', border: 0, borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: 'var(--dsw-alias-label-primary)', color: 'var(--dsw-alias-bg-layer-2)',
+              cursor: canSave ? 'pointer' : 'default', opacity: canSave ? 1 : 0.4,
+            },
+          }, saving === true ? t('settings.saving') : t('settings.save')),
+        ),
+      );
+
+      const body = loading === true
+        ? h('div', {
+          style: { padding: '28px 0', textAlign: 'center', fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' },
+        }, t('settings.loading'))
+        : error !== null && error !== undefined
+          ? h('div', {
+            role: 'alert',
+            style: {
+              display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10,
+              background: 'var(--dsw-alias-state-warn-tertiary)',
+              border: '1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent)',
+              color: 'var(--dsw-alias-label-primary)', fontSize: 13, lineHeight: '20px',
+            },
+          },
+            h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)', marginTop: 2 } }, glyph(WARNING_PARTS, 16)),
+            h('span', null, error),
+          )
+          : form();
+
+      return h(ModalFrame, {
+        dialogRef,
+        bodyRef,
+        label: t('settings.title'),
+        title: t('settings.title'),
+        iconKey: 'session-title-template.settings',
+        closeLabel: t('dialog.close'),
+        onClose: close,
+        width: 580,
+        height: 'min(736px, calc(100% - 48px))',
+        maxHeight: 'calc(100% - 48px)',
+        subHeader,
+        footer,
+      }, body);
+    }
+
+    /** Load the plugin's YAML configuration into the plugin-detail editor store. */
+    async function loadYamlConfig(store, t) {
+      const { requestId, signal } = store.beginRequest();
+      const prev = store.get();
+      store.set({
+        requestId,
+        loading: prev?.savedYaml === undefined,
+        reloading: prev?.savedYaml !== undefined,
+        error: null,
+        saving: false,
+        confirmReset: false,
+        editable: prev?.editable ?? false,
+        savedYaml: prev?.savedYaml ?? '',
+        fullYaml: prev?.fullYaml ?? '',
+        draftYaml: prev?.draftYaml ?? '',
+        notice: null,
+      });
+      try {
+        const { response, payload } = await fetchSettings(signal);
+        if (!store.isCurrent(requestId)) return;
+        if (response.ok && payload !== null && typeof payload?.yaml === 'string') {
+          store.set({
+            requestId, loading: false, reloading: false, error: null, saving: false,
+            confirmReset: false, notice: null,
+            editable: payload.editable === true,
+            savedYaml: payload.yaml,
+            fullYaml: typeof payload.fullYaml === 'string' ? payload.fullYaml : payload.yaml,
+            draftYaml: payload.yaml,
+          });
+          return;
+        }
+        const message = payload?.code === 'forbidden' ? t('menu.forbidden')
+          : payload === null || typeof payload?.code !== 'string' ? t('settings.needsReload')
+            : t('settings.loadFailed');
+        store.set({
+          requestId, loading: false, reloading: false, error: message, saving: false,
+          confirmReset: false, editable: false, savedYaml: '', fullYaml: '', draftYaml: '', notice: null,
+        });
+      } catch (error) {
+        if (signal?.aborted || error?.name === 'AbortError' || !store.isCurrent(requestId)) return;
+        store.set({
+          requestId, loading: false, reloading: false, error: t('settings.needsReload'), saving: false,
+          confirmReset: false, editable: false, savedYaml: '', fullYaml: '', draftYaml: '', notice: null,
+        });
       }
-      return modal;
+    }
+
+    /** Save the raw YAML text via `POST session-title-template/settings` (`mode: 'yaml'`). */
+    async function saveYamlConfig(store, t, sync) {
+      const state = store.get();
+      if (state === null || state.saving === true || state.editable !== true || state.loading === true) return;
+      if (state.draftYaml === state.savedYaml) return;
+      const { requestId, savedYaml, draftYaml } = state;
+      store.set({ ...state, saving: true, confirmReset: false, notice: null });
+      const finish = (patch) => {
+        const now = store.get();
+        if (now !== null && now.requestId === requestId) store.set({ ...now, saving: false, ...patch });
+      };
+      const applySaved = (payload, restarted) => {
+        const nextYaml = typeof payload.yaml === 'string' ? payload.yaml : draftYaml;
+        const nextFull = typeof payload.fullYaml === 'string' ? payload.fullYaml : nextYaml;
+        finish({
+          savedYaml: nextYaml,
+          fullYaml: nextFull,
+          draftYaml: nextYaml,
+          notice: { kind: 'success', text: restarted === false ? t('settings.savedNoChange') : t('settings.saved') },
+        });
+        sync?.emit({ source: 'yaml', payload });
+      };
+      try {
+        const response = await fetch(SETTINGS_ROUTE, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify({ mode: 'yaml', yaml: draftYaml }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (response.ok && payload?.saved === true) {
+          applySaved(payload, payload.restarted);
+          return;
+        }
+        finish({ notice: { kind: 'error', text: settingsErrorText(payload, t) } });
+      } catch {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          await sleep(500);
+          try {
+            const { response, payload } = await fetchSettings(undefined);
+            if (response.ok && typeof payload?.yaml === 'string' && payload.yaml !== savedYaml) {
+              applySaved(payload, true);
+              return;
+            }
+          } catch { /* the plugin may still be restarting */ }
+        }
+        finish({ notice: { kind: 'error', text: t('settings.saveFailed') } });
+      }
+    }
+
+    /** Reset the plugin configuration back to its bundle defaults (`mode: 'reset'`). */
+    async function resetYamlConfig(store, t, sync) {
+      const state = store.get();
+      if (state === null || state.saving === true || state.editable !== true || state.loading === true) return;
+      const { requestId, savedYaml } = state;
+      store.set({ ...state, saving: true, confirmReset: false, notice: null });
+      const finish = (patch) => {
+        const now = store.get();
+        if (now !== null && now.requestId === requestId) store.set({ ...now, saving: false, ...patch });
+      };
+      const applyReset = (payload, restarted) => {
+        const nextYaml = typeof payload.yaml === 'string' ? payload.yaml : '{}\n';
+        const nextFull = typeof payload.fullYaml === 'string' ? payload.fullYaml : nextYaml;
+        finish({
+          savedYaml: nextYaml,
+          fullYaml: nextFull,
+          draftYaml: nextYaml,
+          notice: { kind: 'success', text: restarted === false ? t('yaml.alreadyDefault') : t('yaml.resetDone') },
+        });
+        sync?.emit({ source: 'yaml', payload });
+      };
+      try {
+        const response = await fetch(SETTINGS_ROUTE, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify({ mode: 'reset' }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (response.ok && payload?.saved === true) {
+          applyReset(payload, payload.restarted);
+          return;
+        }
+        finish({ notice: { kind: 'error', text: settingsErrorText(payload, t) } });
+      } catch {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          await sleep(500);
+          try {
+            const { response, payload } = await fetchSettings(undefined);
+            if (response.ok && typeof payload?.yaml === 'string' && (payload.yaml !== savedYaml || payload.yaml.trim() === '{}')) {
+              applyReset(payload, true);
+              return;
+            }
+          } catch { /* the plugin may still be restarting */ }
+        }
+        finish({ notice: { kind: 'error', text: t('settings.saveFailed') } });
+      }
+    }
+
+    /**
+     * Developer YAML configuration editor rendered on the plugin detail page
+     * via `plugins.bundle.config` (`key: '@redheartsecretman/session-title-template'`).
+     */
+    function PluginYamlConfigSection({ store, t, sync, uiLanguage }) {
+      useUiLanguage(uiLanguage);
+      const [state, setState] = React.useState(() => store.get());
+      const [focused, setFocused] = React.useState(false);
+
+      React.useEffect(() => {
+        const offStore = store.subscribe(() => setState(store.get()));
+        const offSync = sync ? sync.subscribe((event) => {
+          if (event?.source === 'modal' && typeof event?.payload?.yaml === 'string') {
+            const now = store.get();
+            if (now !== null && now.draftYaml === now.savedYaml) {
+              store.set({
+                ...now,
+                savedYaml: event.payload.yaml,
+                fullYaml: typeof event.payload.fullYaml === 'string' ? event.payload.fullYaml : now.fullYaml,
+                draftYaml: event.payload.yaml,
+                notice: null,
+              });
+            }
+          }
+        }) : () => {};
+        if (typeof fetch === 'function') {
+          void loadYamlConfig(store, t);
+        }
+        return () => {
+          offStore();
+          offSync();
+          store.close();
+        };
+      }, [store, t, sync]);
+
+      const loading = state === null || state.loading === true;
+      const error = state?.error ?? null;
+      const editable = state?.editable === true;
+      const saving = state?.saving === true;
+      const reloading = state?.reloading === true;
+      const savedYaml = state?.savedYaml ?? '';
+      const fullYaml = state?.fullYaml ?? '';
+      const draftYaml = state?.draftYaml ?? '';
+      const confirmReset = state?.confirmReset === true;
+      const notice = state?.notice ?? null;
+      const dirty = !loading && error === null && draftYaml !== savedYaml;
+      const locked = !editable || saving || loading;
+      const canSave = editable && dirty && !saving;
+      const canExpandFull = !locked && fullYaml !== '' && draftYaml !== fullYaml;
+
+      const patchState = (patch) => {
+        const now = store.get();
+        if (now !== null) store.set({ ...now, ...patch });
+      };
+
+      const toolbarButtonStyle = (enabled) => ({
+        height: 26, padding: '0 10px', borderRadius: 7,
+        border: '1px solid var(--dsw-alias-border-l2)',
+        color: 'var(--dsw-alias-label-secondary)',
+        fontSize: 12, lineHeight: '18px', fontFamily: 'inherit',
+        cursor: enabled ? 'pointer' : 'default',
+        opacity: enabled ? 1 : 0.45,
+      });
+
+      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+        // Header matching PluginManager detail sections (`h4` 14px/500)
+        h('div', {
+          style: {
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+            gap: 12, flexWrap: 'wrap',
+          },
+        },
+          h('div', { style: { minWidth: 0 } },
+            h('h4', {
+              style: {
+                margin: 0, fontSize: 14, fontWeight: 500, lineHeight: '20px',
+                color: 'var(--dsw-alias-label-primary)',
+              },
+            }, t('yaml.title')),
+            h('div', {
+              style: {
+                fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)',
+                marginTop: 2,
+              },
+            }, t('yaml.subtitle')),
+          ),
+          loading || error !== null ? null : h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flex: 'none' } },
+            h(ActionButton, {
+              onClick: () => patchState({ draftYaml: fullYaml, confirmReset: false, notice: null }),
+              disabled: !canExpandFull,
+              style: toolbarButtonStyle(canExpandFull),
+            }, t('yaml.expandFull')),
+            h(ActionButton, {
+              onClick: () => { void loadYamlConfig(store, t); },
+              disabled: loading || saving || reloading,
+              style: toolbarButtonStyle(!loading && !saving && !reloading),
+            }, t('yaml.reload')),
+          ),
+        ),
+
+        !loading && error === null && !editable ? h(ReadOnlyBanner, { t }) : null,
+
+        loading
+          ? h('div', {
+            style: {
+              padding: '24px 14px', borderRadius: 12, border: '1px solid var(--dsw-alias-border-l2)',
+              textAlign: 'center', fontSize: 12.5, color: 'var(--dsw-alias-label-tertiary)',
+            },
+          }, t('settings.loading'))
+          : error !== null
+            ? h('div', {
+              role: 'alert',
+              style: {
+                display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10,
+                background: 'var(--dsw-alias-state-warn-tertiary)',
+                border: '1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent)',
+                color: 'var(--dsw-alias-label-primary)', fontSize: 12.5, lineHeight: '18px',
+              },
+            },
+              h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)', marginTop: 1 } }, glyph(WARNING_PARTS, 16)),
+              h('span', null, error),
+            )
+            : h('div', {
+              style: {
+                borderRadius: 12,
+                border: `1px solid ${focused && !locked ? 'color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent)' : 'var(--dsw-alias-border-l2)'}`,
+                background: 'var(--dsw-alias-bg-layer-2)',
+                overflow: 'hidden',
+                transition: 'border-color 140ms ease',
+              },
+            },
+              h('textarea', {
+                'aria-label': t('yaml.editorAria'),
+                value: draftYaml,
+                disabled: locked,
+                spellCheck: false,
+                rows: 14,
+                onFocus: () => setFocused(true),
+                onBlur: () => setFocused(false),
+                onChange: (event) => patchState({ draftYaml: event.target.value, confirmReset: false, notice: null }),
+                onKeyDown: (event) => {
+                  if ((event.metaKey || event.ctrlKey) && (event.key === 's' || event.key === 'S')) {
+                    event.preventDefault();
+                    if (canSave) void saveYamlConfig(store, t, sync);
+                  }
+                },
+                style: {
+                  display: 'block', width: '100%', minHeight: 240, boxSizing: 'border-box',
+                  padding: '12px 14px', margin: 0, border: 0, outline: 'none', resize: 'vertical',
+                  background: 'var(--dsw-alias-interactive-bg-hover)',
+                  color: 'var(--dsw-alias-label-primary)',
+                  fontFamily: CODE_FONT, fontSize: 12, lineHeight: '19px', tabSize: 2,
+                  ...(locked ? { opacity: 0.65, cursor: 'not-allowed' } : {}),
+                },
+              }),
+              h('div', {
+                style: {
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  gap: 12, flexWrap: 'wrap', padding: '10px 14px',
+                  borderTop: '1px solid var(--dsw-alias-border-l1)',
+                },
+              },
+                h(FooterNotice, { notice, dirty, t }),
+                h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flex: 'none' } },
+                  confirmReset
+                    ? h(React.Fragment, null,
+                      h(ActionButton, {
+                        onClick: () => patchState({ confirmReset: false }),
+                        disabled: saving,
+                        style: {
+                          height: 28, padding: '0 10px', border: '1px solid var(--dsw-alias-border-l2)',
+                          borderRadius: 8, color: 'var(--dsw-alias-label-secondary)', fontSize: 12,
+                          cursor: 'pointer',
+                        },
+                      }, t('yaml.cancel')),
+                      h(ActionButton, {
+                        onClick: () => { void resetYamlConfig(store, t, sync); },
+                        disabled: locked,
+                        hoverBackground: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 24%, transparent)',
+                        style: {
+                          height: 28, padding: '0 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                          background: 'var(--dsw-alias-state-warn-tertiary)',
+                          border: '1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 45%, transparent)',
+                          color: 'var(--dsw-alias-state-warn-label)',
+                          cursor: locked ? 'default' : 'pointer',
+                        },
+                      }, t('yaml.confirmReset')),
+                    )
+                    : h(ActionButton, {
+                      onClick: () => patchState({ confirmReset: true, notice: null }),
+                      disabled: locked,
+                      style: {
+                        height: 28, padding: '0 12px', border: '1px solid var(--dsw-alias-border-l2)',
+                        borderRadius: 8, color: 'var(--dsw-alias-label-secondary)', fontSize: 12,
+                        cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.45 : 1,
+                      },
+                    }, t('yaml.resetDefaults')),
+                  h(ActionButton, {
+                    onClick: () => patchState({ draftYaml: savedYaml, confirmReset: false, notice: null }),
+                    disabled: !dirty || saving,
+                    style: {
+                      height: 28, padding: '0 12px', border: '1px solid var(--dsw-alias-border-l2)',
+                      borderRadius: 8, color: 'var(--dsw-alias-label-secondary)', fontSize: 12,
+                      cursor: dirty && !saving ? 'pointer' : 'default',
+                      opacity: dirty && !saving ? 1 : 0.45,
+                    },
+                  }, t('settings.reset')),
+                  h(ActionButton, {
+                    onClick: () => { void saveYamlConfig(store, t, sync); },
+                    disabled: !canSave,
+                    hoverBackground: 'color-mix(in srgb, var(--dsw-alias-label-primary) 88%, transparent)',
+                    style: {
+                      height: 28, padding: '0 14px', border: 0, borderRadius: 8, fontSize: 12, fontWeight: 600,
+                      background: 'var(--dsw-alias-label-primary)', color: 'var(--dsw-alias-bg-layer-2)',
+                      cursor: canSave ? 'pointer' : 'default', opacity: canSave ? 1 : 0.4,
+                    },
+                  }, saving ? t('settings.saving') : t('yaml.save')),
+                ),
+              ),
+            ),
+      );
     }
 
     /** Format a disabled menu item label with a localized parenthetical reason. */
@@ -919,7 +2900,7 @@ window.__ModuleLoader__.load({
     /**
      * Build the native menu rows for one Session.
      *
-     * Three operations live in one submenu beside the built-in entries, so the
+     * Four operations live in one submenu beside the built-in entries, so the
      * main menu keeps its length and each row inherits the native icon column,
      * spacing and disabled styling. Icons use this plugin's own keys on the
      * keyed icon slot so none of them collide visually with the neighbouring
@@ -932,7 +2913,7 @@ window.__ModuleLoader__.load({
      * to `/title refresh` before a Host reload. Pinning goes through the Session
      * reference, which resumes a cold session when needed.
      */
-    function titleMenuActions(target, { t, ctx, statusDialog, refreshingSessions }) {
+    function titleMenuActions(target, { t, ctx, statusDialog, settingsDialog, refreshingSessions, uiLanguage }) {
       const { sessionId, displayTitle } = target;
       const live = (ctx.sessions.retainInfo(sessionId).getSnapshot()?.referenceCount ?? 0) > 0;
       const projected = readProjectedTitleState(ctx, sessionId);
@@ -1082,6 +3063,7 @@ window.__ModuleLoader__.load({
       };
 
       const openStatus = async () => {
+        settingsDialog.close();
         const { requestId, signal } = statusDialog.beginRequest();
         // Wait briefly before showing a loading placeholder so local reads open
         // directly at their final height without a loading-to-content jump.
@@ -1138,6 +3120,16 @@ window.__ModuleLoader__.load({
             ...(statusDisabledReason === undefined ? { run: openStatus } : {}),
             failureLabel: t('menu.statusFailed'),
           },
+          {
+            // A form for the plugin's own configuration, not an action on this
+            // session, so it stays available on cold sessions.
+            id: 'title.settings',
+            label: disabledLabel(t, 'menu.settings', hasFetch ? undefined : t('menu.needsOpen')),
+            icon: { key: 'session-title-template.settings' },
+            disabled: !hasFetch,
+            ...(hasFetch ? { run: () => { statusDialog.close(); return loadSettings(settingsDialog, t, uiLanguage); } } : {}),
+            failureLabel: t('settings.loadFailed'),
+          },
         ],
       }];
     }
@@ -1146,13 +3138,18 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'sessions', 'locale', 'remote', 'remote.commands', 'contextMenus'],
       apply(ctx) {
         const statusDialog = createDialogStore();
+        const settingsDialog = createDialogStore();
+        const yamlStore = createDialogStore();
+        const settingsSync = createEventBus();
         const refreshingSessions = new Set();
         ctx.effect(() => () => {
           statusDialog.close();
+          settingsDialog.close();
+          yamlStore.close();
           refreshingSessions.clear();
         }, 'session-title-template: status dialog');
 
-        ctx.effect(() => ctx.locale.register(NS, {
+        const dictionaries = {
           zh: {
             'menu.title': '会话标题',
             'menu.auto': '自动生成',
@@ -1176,6 +3173,151 @@ window.__ModuleLoader__.load({
             'menu.done': '已完成',
             'menu.pinDone': '会话标题已固定，自动命名不再覆盖。',
             'menu.pinFailed': '固定失败',
+            'menu.settings': '命名设置',
+            'settings.title': '命名设置',
+            'settings.loading': '正在读取设置…',
+            'settings.loadFailed': '读取命名设置失败',
+            'settings.needsReload': '设置接口不可用：请重启 DSH 使新版插件生效后再试。',
+            'settings.editorUnavailable': '当前 profile 无法保存插件配置，可在 cordis.patch.yml 中手动修改。',
+            'settings.tab.format': '格式',
+            'settings.tab.types': '类型',
+            'settings.tab.models': '模型',
+            'settings.tab.behavior': '行为',
+            'settings.preview': '效果预览',
+            'settings.preview.invalidTemplate': '模板需各包含一次 {date}、{type}、{topic}',
+            'settings.preview.sampleTopicZhSpaced': '优化 Web 设置面板',
+            'settings.preview.sampleTopicZhCompact': '优化Web设置面板',
+            'settings.preview.sampleTopicEn': 'Refine settings dialog',
+            'settings.group.format': '标题',
+            'settings.group.date': '日期',
+            'settings.group.typePolicy': '策略',
+            'settings.group.types': '词表',
+            'settings.group.models': '标题生成',
+            'settings.group.behavior': '常规参数',
+            'settings.group.advanced': '高级参数',
+            'settings.group.advanced.hint': '输入上限、超时与重试策略',
+            'settings.template': '标题模板',
+            'settings.template.hint': '须各包含一次 {date}、{type}、{topic}',
+            'settings.language': '标题语言',
+            'settings.language.hint': '主题与提示词使用的语言',
+            'settings.language.zh': '中文',
+            'settings.language.en': 'English',
+            'settings.preset': '命名预设',
+            'settings.preset.hint': '一键切换默认词表、标题语言和中英间距',
+            'settings.preset.zh': '中文',
+            'settings.preset.en': 'English',
+            'settings.uiLanguage': '界面语言',
+            'settings.uiLanguage.hint': '只改变本插件菜单、弹窗和状态页的语言',
+            'settings.uiLanguage.auto': '跟随 DSH',
+            'settings.uiLanguage.zh': '中文',
+            'settings.uiLanguage.en': 'English',
+            'settings.subagentDelegationLabel': '子智能体首轮使用委派标签',
+            'settings.subagentDelegationLabel.hint': '关闭后首轮直接调用标题模型',
+            'settings.fallbackPolicy': '兜底',
+            'settings.fallbackTruncation': '截断模式',
+            'settings.fallbackTruncation.hint': '自然保留语义，硬截断严格贴合长度上限',
+            'settings.fallbackTruncation.natural': '自然截断',
+            'settings.fallbackTruncation.hard': '硬截断',
+            'settings.fallbackPolicy.hint': '无可用模型时从首条消息生成临时标题',
+            'settings.fallbackPolicy.detail': '无模型时自然或硬截断首条消息',
+            'settings.types.tableHint': '',
+            'settings.types.colProvisional': '细化',
+            'settings.types.colCount': '轮数',
+            'settings.types.colRemove': '删除',
+            'settings.types.provisionalAria': '将「{key}」设为临时类型',
+            'settings.types.countAria': '「{key}」的最大细化次数',
+            'settings.fallbackType': '兜底类型',
+            'settings.fallbackType.hint': '尚未生成正式标题时使用的默认类型',
+            'settings.provisionalPolicy': '临时类型与细化次数',
+            'settings.provisionalPolicy.hint': '命中后在前 N 条有效消息内继续细化（1–100）；列表为空时所有类型生成后立即定稿',
+            'settings.provisionalPolicy.colType': '类型',
+            'settings.provisionalPolicy.colCount': '细化消息数',
+            'settings.provisionalPolicy.summaryItem': '{key}（前 {count} 条）',
+            'settings.provisionalPolicy.emptySummary': '未启用（生成后即定稿）',
+            'settings.provisionalPolicy.typeAria': '第 {index} 项临时类型',
+            'settings.provisionalPolicy.countAria': '「{key}」的最大细化次数',
+            'settings.provisionalPolicy.removeAria': '移除临时类型「{key}」',
+            'settings.provisionalPolicy.add': '添加临时类型',
+            'settings.types.colKey': '类型',
+            'settings.types.colHint': '分类说明',
+            'settings.types.keyPlaceholder': '如 功能',
+            'settings.types.hintPlaceholder': '描述适用场景，帮助模型归类',
+            'settings.types.keyAria': '第 {index} 项类型名称',
+            'settings.types.hintAria': '第 {index} 项分类说明',
+            'settings.types.removeAria': '删除类型「{key}」',
+            'settings.types.add': '添加类型',
+            'settings.types.restoreDefaults': '恢复默认词表',
+            'settings.types.emptySummary': '暂无类型',
+            'settings.section.expand': '展开',
+            'settings.section.collapse': '收起',
+            'settings.topicLength': '主题长度',
+            'settings.topicLength.hint': '最小 – 最大字宽',
+            'settings.topicMin': '主题最小字宽',
+            'settings.topicMax': '主题最大字宽',
+            'settings.cjkSpacing': '中英间距',
+            'settings.cjkSpacing.hint': '在中文与英文、数字之间补空格',
+            'settings.dateFormat': '形式',
+            'settings.dateFormat.hint': '按会话创建时间生成',
+            'settings.timezone': '时区',
+            'settings.timezone.hint': 'IANA 名称，如 Asia/Shanghai',
+            'settings.primaryRoute': '主代理',
+            'settings.primaryRoute.hint': '当前会话标题生成模型，默认跟随会话模型',
+            'settings.subagentRoute': '子代理',
+            'settings.subagentRoute.hint': '子智能体生成或细化标题时使用，留空跟随主代理',
+            'settings.fallbackRoute': '兜底',
+            'settings.fallbackRoute.hint': '主路由失败或历史补全缺少原模型时使用',
+            'settings.route.followSession': '跟随当前会话模型',
+            'settings.route.followMain': '跟随主代理',
+            'settings.route.none': '不启用兜底模型',
+            'settings.route.custom': '手动填写 Provider / Model…',
+            'settings.provider': 'Provider',
+            'settings.provider.placeholder': '如 deepseek',
+            'settings.model': 'Model',
+            'settings.model.placeholder': '如 deepseek-chat',
+            'settings.subagentProvider': '子代理 Provider',
+            'settings.subagentModel': '子代理 Model',
+            'settings.fallbackProvider': '兜底 Provider',
+            'settings.fallbackModel': '兜底 Model',
+            'settings.agentsInstructions': '读取 AGENTS.md 补充规则',
+            'settings.agentsInstructions.hint': '把命名相关段落并入提示词',
+            'settings.agentsInstructionsMaxBytes': '补充规则读取上限',
+            'settings.agentsInstructionsMaxBytes.hint': '字节数（256–65536）',
+            'settings.roleProbe': '端点指令探针',
+            'settings.roleProbe.hint': '确认端点确实收到了指令块',
+            'settings.backfill': '补写历史标题',
+            'settings.backfill.hint': '启动后自动为旧会话补齐模板标题（保留手动固定标题）',
+            'settings.maxInputBytes': '输入字节上限',
+            'settings.maxInputBytes.hint': '传给模型的上下文预算（256–1048576）',
+            'settings.maxOutputTokens': '输出词元上限',
+            'settings.maxOutputTokens.hint': '单次标题请求最大输出（8–4096）',
+            'settings.timeoutMs': '请求超时（毫秒）',
+            'settings.timeoutMs.hint': '单次调用超时时间（1000–600000）',
+            'settings.retryAttempts': '重试次数',
+            'settings.retryAttempts.hint': '每次生成的最大尝试轮数（1–5）',
+            'settings.retryDelayMs': '重试间隔（毫秒）',
+            'settings.retryDelayMs.hint': '失败后退避等待时间（0–10000）',
+            'settings.restartNote': '保存后将重载插件，进行中请求会取消',
+            'settings.save': '保存',
+            'settings.saving': '保存中…',
+            'settings.reset': '还原',
+            'settings.saved': '已保存，插件已重载。',
+            'settings.savedNoChange': '没有需要保存的变化。',
+            'settings.invalid': '设置无效：{message}',
+            'settings.invalidNumber': '请为数值字段填写有效的非负整数。',
+            'settings.overridden': '该配置被 home patch 或命令行覆盖，无法在这里修改。',
+            'settings.saveFailed': '保存失败，请查看诊断日志。',
+            'yaml.title': 'YAML 配置',
+            'yaml.subtitle': '直接编辑本插件的 config 节点，保存前自动校验语法与字段，不影响其他插件配置。',
+            'yaml.editorAria': '插件 YAML 配置编辑器',
+            'yaml.expandFull': '展开完整配置',
+            'yaml.reload': '重新加载',
+            'yaml.resetDefaults': '恢复默认',
+            'yaml.confirmReset': '确认恢复默认',
+            'yaml.cancel': '取消',
+            'yaml.save': '保存 YAML',
+            'yaml.resetDone': '已恢复默认配置，插件已重载。',
+            'yaml.alreadyDefault': '当前已是默认配置。',
+            'yaml.invalidSyntax': '{message}',
             'icon.auto': '标题由插件自动生成',
             'icon.pinned': '标题已手动固定',
             'icon.fallback': '当前为临时回退标题',
@@ -1221,7 +3363,7 @@ window.__ModuleLoader__.load({
             'dialog.types': '类型词表',
             'dialog.supplements': '补充规则',
             'dialog.probeLine': '探针结论：{verdict}',
-            'dialog.probe.supported': '该端点能读到指令块，角色正常',
+            'dialog.probe.supported': '开发者角色正常，该端点能读到对应指令块',
             'dialog.probe.unsupported': '该端点丢弃了指令块，标题指令可能未送达',
           },
           en: {
@@ -1247,6 +3389,151 @@ window.__ModuleLoader__.load({
             'menu.done': 'Done',
             'menu.pinDone': 'Title pinned; automatic naming will not overwrite it.',
             'menu.pinFailed': 'Could not pin the title',
+            'menu.settings': 'Naming settings',
+            'settings.title': 'Naming settings',
+            'settings.loading': 'Loading settings…',
+            'settings.loadFailed': 'Could not read the naming settings',
+            'settings.needsReload': 'The settings route is unavailable: restart DSH so the new plugin version takes effect, then try again.',
+            'settings.editorUnavailable': 'This profile cannot save plugin configuration; edit cordis.patch.yml by hand instead.',
+            'settings.tab.format': 'Format',
+            'settings.tab.types': 'Types',
+            'settings.tab.models': 'Models',
+            'settings.tab.behavior': 'Behavior',
+            'settings.preview': 'Live preview',
+            'settings.preview.invalidTemplate': 'Requires {date}, {type}, and {topic} once each',
+            'settings.preview.sampleTopicZhSpaced': '优化 Web 设置面板',
+            'settings.preview.sampleTopicZhCompact': '优化Web设置面板',
+            'settings.preview.sampleTopicEn': 'Refine settings dialog',
+            'settings.group.format': 'Title',
+            'settings.group.date': 'Date',
+            'settings.group.typePolicy': 'Policy',
+            'settings.group.types': 'Vocabulary',
+            'settings.group.models': 'Title generation',
+            'settings.group.behavior': 'General',
+            'settings.group.advanced': 'Advanced',
+            'settings.group.advanced.hint': 'Budgets, timeout, and retry policy',
+            'settings.template': 'Title template',
+            'settings.template.hint': 'Use {date}, {type}, and {topic} once each',
+            'settings.language': 'Title language',
+            'settings.language.hint': 'Prompt language',
+            'settings.language.zh': '中文',
+            'settings.language.en': 'English',
+            'settings.preset': 'Naming preset',
+            'settings.preset.hint': 'Switch vocabulary, title language, and spacing',
+            'settings.preset.zh': '中文',
+            'settings.preset.en': 'English',
+            'settings.uiLanguage': 'Interface language',
+            'settings.uiLanguage.hint': 'Language for this plugin only',
+            'settings.uiLanguage.auto': 'Follow DSH',
+            'settings.uiLanguage.zh': '中文',
+            'settings.uiLanguage.en': 'English',
+            'settings.subagentDelegationLabel': 'Use delegation label on subagent turn one',
+            'settings.subagentDelegationLabel.hint': 'When off, call the title model on the first turn',
+            'settings.fallbackPolicy': 'Fallback',
+            'settings.fallbackTruncation': 'Truncation mode',
+            'settings.fallbackTruncation.hint': 'Natural meaning or strict width limit',
+            'settings.fallbackTruncation.natural': 'Natural truncation',
+            'settings.fallbackTruncation.hard': 'Hard truncation',
+            'settings.fallbackPolicy.hint': 'Temporary title without a model route',
+            'settings.fallbackPolicy.detail': 'Natural or hard truncation without a model',
+            'settings.types.tableHint': '',
+            'settings.types.colProvisional': 'Refine',
+            'settings.types.colCount': 'Rounds',
+            'settings.types.colRemove': 'Delete',
+            'settings.types.provisionalAria': 'Make {key} provisional',
+            'settings.types.countAria': 'Maximum refinements for {key}',
+            'settings.fallbackType': 'Fallback type',
+            'settings.fallbackType.hint': 'Default type used until a formal title exists',
+            'settings.provisionalPolicy': 'Provisional types & refinements',
+            'settings.provisionalPolicy.hint': 'Refine these types during the first N messages (1–100); when empty, all titles settle immediately',
+            'settings.provisionalPolicy.colType': 'Type',
+            'settings.provisionalPolicy.colCount': 'First N messages',
+            'settings.provisionalPolicy.summaryItem': '{key} (first {count})',
+            'settings.provisionalPolicy.emptySummary': 'None (titles settle immediately)',
+            'settings.provisionalPolicy.typeAria': 'Provisional type {index}',
+            'settings.provisionalPolicy.countAria': 'Max refinements for {key}',
+            'settings.provisionalPolicy.removeAria': 'Remove provisional type {key}',
+            'settings.provisionalPolicy.add': 'Add provisional type',
+            'settings.types.colKey': 'Type',
+            'settings.types.colHint': 'Description',
+            'settings.types.keyPlaceholder': 'e.g. feat',
+            'settings.types.hintPlaceholder': 'Describe when to choose this type',
+            'settings.types.keyAria': 'Type {index} name',
+            'settings.types.hintAria': 'Type {index} hint',
+            'settings.types.removeAria': 'Remove type {key}',
+            'settings.types.add': 'Add type',
+            'settings.types.restoreDefaults': 'Restore defaults',
+            'settings.types.emptySummary': 'No types configured',
+            'settings.section.expand': 'Expand',
+            'settings.section.collapse': 'Collapse',
+            'settings.topicLength': 'Topic length',
+            'settings.topicLength.hint': 'Min – max width',
+            'settings.topicMin': 'Minimum topic width',
+            'settings.topicMax': 'Maximum topic width',
+            'settings.cjkSpacing': 'CJK spacing',
+            'settings.cjkSpacing.hint': 'Space CJK and Latin text',
+            'settings.dateFormat': 'Format',
+            'settings.dateFormat.hint': 'Taken from the session creation time',
+            'settings.timezone': 'Time zone',
+            'settings.timezone.hint': 'IANA name, such as Asia/Shanghai',
+            'settings.primaryRoute': 'Main agent',
+            'settings.primaryRoute.hint': 'Title model, follows session by default',
+            'settings.subagentRoute': 'Subagent',
+            'settings.subagentRoute.hint': 'Subagent model, follows main by default',
+            'settings.fallbackRoute': 'Fallback',
+            'settings.fallbackRoute.hint': 'Used after route or backfill failure',
+            'settings.route.followSession': 'Follow current session model',
+            'settings.route.followMain': 'Follow main agent',
+            'settings.route.none': 'Disabled (no fallback model)',
+            'settings.route.custom': 'Enter provider / model manually…',
+            'settings.provider': 'Provider',
+            'settings.provider.placeholder': 'e.g. deepseek',
+            'settings.model': 'Model',
+            'settings.model.placeholder': 'e.g. deepseek-chat',
+            'settings.subagentProvider': 'Subagent provider',
+            'settings.subagentModel': 'Subagent model',
+            'settings.fallbackProvider': 'Fallback provider',
+            'settings.fallbackModel': 'Fallback model',
+            'settings.agentsInstructions': 'Read AGENTS.md supplements',
+            'settings.agentsInstructions.hint': 'Add naming rules to the prompt',
+            'settings.agentsInstructionsMaxBytes': 'Supplement byte limit',
+            'settings.agentsInstructionsMaxBytes.hint': 'Bytes (256–65536)',
+            'settings.roleProbe': 'Endpoint instruction probe',
+            'settings.roleProbe.hint': 'Check that the endpoint receives the instruction block',
+            'settings.backfill': 'Backfill past titles',
+            'settings.backfill.hint': 'Backfill older sessions after startup',
+            'settings.maxInputBytes': 'Max input bytes',
+            'settings.maxInputBytes.hint': 'Model context budget (256–1048576)',
+            'settings.maxOutputTokens': 'Max output tokens',
+            'settings.maxOutputTokens.hint': 'Title output cap (8–4096)',
+            'settings.timeoutMs': 'Request timeout (ms)',
+            'settings.timeoutMs.hint': 'Per-attempt timeout (1000–600000)',
+            'settings.retryAttempts': 'Retry attempts',
+            'settings.retryAttempts.hint': 'Max rounds (1–5)',
+            'settings.retryDelayMs': 'Retry delay (ms)',
+            'settings.retryDelayMs.hint': 'Retry delay (0–10000)',
+            'settings.restartNote': 'Saving reloads the plugin and cancels active requests.',
+            'settings.save': 'Save',
+            'settings.saving': 'Saving…',
+            'settings.reset': 'Revert',
+            'settings.saved': 'Saved; the plugin reloaded.',
+            'settings.savedNoChange': 'Nothing to save.',
+            'settings.invalid': 'Invalid settings: {message}',
+            'settings.invalidNumber': 'Numeric fields must be valid non-negative integers.',
+            'settings.overridden': 'A home patch or command-line overlay overrides this configuration, so it cannot be changed here.',
+            'settings.saveFailed': 'Could not save; see the diagnostics log.',
+            'yaml.title': 'YAML configuration',
+            'yaml.subtitle': 'Edit this plugin’s config block directly. Syntax and schema are validated before saving without touching other plugins.',
+            'yaml.editorAria': 'Plugin YAML configuration editor',
+            'yaml.expandFull': 'Expand full config',
+            'yaml.reload': 'Reload',
+            'yaml.resetDefaults': 'Reset to defaults',
+            'yaml.confirmReset': 'Confirm reset',
+            'yaml.cancel': 'Cancel',
+            'yaml.save': 'Save YAML',
+            'yaml.resetDone': 'Reset to defaults; the plugin reloaded.',
+            'yaml.alreadyDefault': 'Already using default configuration.',
+            'yaml.invalidSyntax': '{message}',
             'icon.auto': 'Title generated by the plugin',
             'icon.pinned': 'Title pinned manually',
             'icon.fallback': 'Showing a temporary fallback title',
@@ -1292,11 +3579,14 @@ window.__ModuleLoader__.load({
             'dialog.types': 'Type set',
             'dialog.supplements': 'Supplements',
             'dialog.probeLine': 'Probe verdict: {verdict}',
-            'dialog.probe.supported': 'Endpoint receives instruction blocks normally',
+            'dialog.probe.supported': 'Developer role works normally; endpoint reads the instruction block',
             'dialog.probe.unsupported': 'Endpoint dropped the instruction block; title rules may not reach the model',
           },
-        }), 'session-title-template: dictionaries');
-        const t = ctx.locale.bind(NS);
+        };
+        ctx.effect(() => ctx.locale.register(NS, dictionaries), 'session-title-template: dictionaries');
+        const hostT = ctx.locale.bind(NS);
+        const uiLanguage = createUiLanguageStore(hostT, dictionaries);
+        const t = (key, vars) => uiLanguage.t(key, vars);
 
         // All menu glyphs are registered under this plugin's own keys on the
         // host's 16px stroke-width 1 grid, so they sit in the native icon
@@ -1321,20 +3611,28 @@ window.__ModuleLoader__.load({
             ctx.sessions.retainInfo(sessionId),
             ...(ctx.sessions.list ? [ctx.sessions.list] : []),
           ],
-          resolve: (target) => titleMenuActions(target, { t, ctx, statusDialog, refreshingSessions }),
+          resolve: (target) => titleMenuActions(target, { t, ctx, statusDialog, settingsDialog, refreshingSessions, uiLanguage }),
         }), 'session-title-template: session menu');
 
         ctx.slots.inject(TRAILING_SLOT, () => ctx.slots.register({
           name: TRAILING_SLOT, id: 'session-title-template', order: 50, locale: NS,
-        }, (props) => h(TitleStatusIcon, { ...props, t })));
+        }, (props) => h(TitleStatusIcon, { ...props, t, uiLanguage })));
 
         ctx.slots.inject(HOVER_SLOT, () => ctx.slots.register({
           name: HOVER_SLOT, id: 'session-title-template', order: 50, locale: NS,
-        }, (props) => h(TitleHover, { ...props, t })));
+        }, (props) => h(TitleHover, { ...props, t, uiLanguage })));
 
         ctx.slots.inject(OVERLAY_SLOT, () => ctx.slots.register({
           name: OVERLAY_SLOT, id: 'session-title-template.status-dialog', locale: NS,
-        }, () => h(TitleStatusDialog, { store: statusDialog, t })));
+        }, () => h(TitleStatusDialog, { store: statusDialog, t, uiLanguage })));
+
+        ctx.slots.inject(OVERLAY_SLOT, () => ctx.slots.register({
+          name: OVERLAY_SLOT, id: 'session-title-template.settings-dialog', locale: NS,
+        }, () => h(TitleSettingsDialog, { store: settingsDialog, t, sync: settingsSync, uiLanguage })));
+
+        ctx.slots.inject(BUNDLE_CONFIG_SLOT, () => ctx.slots.register({
+          name: BUNDLE_CONFIG_SLOT, key: PACKAGE_NAME, locale: NS,
+        }, () => h(PluginYamlConfigSection, { store: yamlStore, t, sync: settingsSync, uiLanguage })));
       },
     };
   },

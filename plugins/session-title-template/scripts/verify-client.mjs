@@ -20,17 +20,44 @@ import vm from 'node:vm';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
-/** A React stand-in: `createElement` records shape; hooks are inert. */
+/** A React stand-in: `createElement` records shape; hooks are inert unless effect capture is active. */
+let capturedEffects = null;
 const reactStub = {
   createElement(type, props, ...children) {
-    return { type, props: props ?? {}, children: children.flat() };
+    // Match real React's `props.children` shape: undefined for 0 children,
+    // the single child directly (not an Array) for 1 child, and an Array for 2+.
+    // Keeping this faithful catches bugs like `...children` on a single child.
+    const normalizedChildren = children.length === 0
+      ? undefined
+      : children.length === 1
+        ? children[0]
+        : children;
+    return { type, props: props ?? {}, children: normalizedChildren };
   },
   Fragment: Symbol('Fragment'),
   useState(initial) { return [typeof initial === 'function' ? initial() : initial, () => {}]; },
-  useEffect() {},
+  useEffect(fn) { if (capturedEffects !== null) capturedEffects.push(fn); },
   useMemo(factory) { return factory(); },
   useRef(value) { return { current: value }; },
 };
+
+/** Expand one component while capturing and running its mount `useEffect` callbacks once. */
+function mountOnce(element) {
+  const queue = [];
+  capturedEffects = queue;
+  let tree;
+  try {
+    tree = expand(element);
+  } finally {
+    capturedEffects = null;
+  }
+  const cleanups = [];
+  for (const effect of queue) {
+    const cleanup = effect();
+    if (typeof cleanup === 'function') cleanups.push(cleanup);
+  }
+  return { tree, unmount: () => { for (const fn of cleanups) fn(); } };
+}
 
 /** Run `client.js` against a recording loader and return the plugin it exports. */
 async function loadClient(extraGlobals = {}) {
@@ -178,7 +205,7 @@ check('the exported plugin declares the services it uses', async () => {
 });
 
 check('apply registers the row slots, the native menu, its icons and the dictionaries', async () => {
-  const { exported } = await loadClient();
+  const { exported, pkg } = await loadClient();
   const { ctx, registrations, dictionaries, disposers, menus } = createContext();
   exported.apply(ctx);
   // Every resource is registered inside an effect, so unloading the plugin must
@@ -187,14 +214,23 @@ check('apply registers the row slots, the native menu, its icons and the diction
     if (typeof result !== 'function') throw new Error(`effect ${label ?? '(unlabelled)'} returned no disposer`);
   }
   const owners = registrations.map(entry => entry.options.name).sort();
-  const expected = ['contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'shell.overlay', 'sidebar.session.row.hover', 'sidebar.session.row.trailing'];
+  const expected = [
+    'contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon',
+    'plugins.bundle.config',
+    'shell.overlay', 'shell.overlay',
+    'sidebar.session.row.hover', 'sidebar.session.row.trailing',
+  ];
   if (JSON.stringify(owners) !== JSON.stringify(expected)) {
     throw new Error(`unexpected slots: ${JSON.stringify(owners)}`);
+  }
+  const bundleConfig = registrations.find(entry => entry.options.name === 'plugins.bundle.config');
+  if (bundleConfig?.options.key !== pkg.name) {
+    throw new Error(`plugins.bundle.config must be keyed by package name ${pkg.name}, got ${bundleConfig?.options.key}`);
   }
   const iconKeys = registrations.filter(e => e.options.name === 'contextMenu.icon').map(e => e.options.key).sort();
   if (JSON.stringify(iconKeys) !== JSON.stringify([
     'session-title-template.auto', 'session-title-template.pin',
-    'session-title-template.status', 'session-title-template.title',
+    'session-title-template.settings', 'session-title-template.status', 'session-title-template.title',
   ])) {
     throw new Error(`unexpected icon keys: ${JSON.stringify(iconKeys)}`);
   }
@@ -208,9 +244,17 @@ check('apply registers the row slots, the native menu, its icons and the diction
   const enKeys = Object.keys(dicts.en ?? {}).sort();
   if (JSON.stringify(zhKeys) !== JSON.stringify(enKeys)) throw new Error('zh and en dictionaries must declare the same keys');
   if (zhKeys.length === 0) throw new Error('dictionaries are empty');
+  if (zhKeys.includes('settings.model.note')) throw new Error('redundant paired-route settings.model.note should stay removed');
+  if (zhKeys.includes('settings.types.note')) throw new Error('redundant settings.types.note should stay removed');
+  if (zhKeys.includes('settings.types.provisional')) throw new Error('redundant settings.types.provisional button label should stay removed');
+  if (/[（(]/u.test(String(dicts.zh['settings.types.colHint']))) throw new Error('zh colHint should not carry parenthetical notes');
+  if (String(dicts.zh['settings.types.colProvisional']) === '临时') throw new Error('zh colProvisional should be a full column heading, not bare 临时');
+  if (String(dicts.zh['settings.maxOutputTokens']) !== '输出词元上限') throw new Error('zh maxOutputTokens should use 词元 instead of Token');
+  if (String(dicts.zh['yaml.subtitle']).includes('面向开发者')) throw new Error('yaml.subtitle should not carry 面向开发者 prefix');
+  if (String(dicts.en['yaml.subtitle']).includes('For developers')) throw new Error('en yaml.subtitle should not carry For developers prefix');
 });
 
-check('the menu is one native submenu holding the three operations', async () => {
+check('the menu is one native submenu holding the four operations', async () => {
   const { exported } = await loadClient();
   const { ctx, menus } = createContext();
   exported.apply(ctx);
@@ -220,7 +264,7 @@ check('the menu is one native submenu holding the three operations', async () =>
   if (group.label !== 'menu.title') throw new Error(`top-level label should be menu.title, got ${group.label}`);
   if (group.icon?.key === undefined) throw new Error('the group needs an icon key to occupy the icon column');
   const ids = group.children.map(child => child.id);
-  const expected = ['title.auto', 'title.pin', 'title.status'];
+  const expected = ['title.auto', 'title.pin', 'title.status', 'title.settings'];
   if (JSON.stringify(ids) !== JSON.stringify(expected)) throw new Error(`unexpected children: ${JSON.stringify(ids)}`);
   if (group.children[0].icon?.key !== 'session-title-template.auto') {
     throw new Error(`title.auto must use the sparkle icon, got: ${group.children[0].icon?.key}`);
@@ -413,7 +457,7 @@ check('viewing status opens a structured shell.overlay modal instead of dumping 
     '  [1124][修复] 修复登录超时',
     '  来源：自动生成',
     '  状态：未固定',
-    '探针结论：该端点能读到指令块，角色正常',
+    '探针结论：开发者角色正常，该端点能读到对应指令块',
   ].join('\n');
   ctx.remote = {
     commands: {
@@ -438,7 +482,7 @@ check('viewing status opens a structured shell.overlay modal instead of dumping 
   const buttons = findElement(dialogs[0], node => node.type === 'button');
   if (buttons.length !== 1) throw new Error(`status dialog should keep one close control, got ${buttons.length}`);
   const text = textOf(tree);
-  for (const expected of ['[{date}][{type}] {topic}', '~/.dsh/AGENTS.md', '[1124][修复] 修复登录超时', '该端点能读到指令块，角色正常']) {
+  for (const expected of ['[{date}][{type}] {topic}', '~/.dsh/AGENTS.md', '[1124][修复] 修复登录超时', '开发者角色正常，该端点能读到对应指令块']) {
     if (!text.includes(expected)) throw new Error(`status dialog missed expected content: ${expected}`);
   }
 });
@@ -686,6 +730,453 @@ check('closing or replacing a status request aborts the prior fetch and fallback
   if (!text.includes('来源：排查网关转发问题')) {
     throw new Error(`fallback parser misclassified title starting with 来源：: ${text}`);
   }
+});
+
+/** Minimal Response stand-in for the fetch stubs below. */
+const reply = (status, payload) => ({ ok: status >= 200 && status < 300, status, json: async () => payload });
+
+const sampleTypes = [
+  { key: '功能', hint: '新增能力', provisional: false },
+  { key: '修复', hint: '排障纠错', provisional: false },
+  { key: '探索', hint: '初步理解', provisional: true, maxRefinements: 4 },
+];
+const settingsValues = {
+  template: '[{date}][{type}] {topic}',
+  language: 'zh',
+  timezone: 'Asia/Shanghai',
+  dateFormat: 'MMDD',
+  cjkSpacing: true,
+  topicMinChars: 8,
+  topicMaxChars: 20,
+  fallbackType: '探索',
+  types: sampleTypes,
+  maxProvisionalRefinements: 4,
+  provider: '',
+  model: '',
+  subagentProvider: '',
+  subagentModel: '',
+  fallbackProvider: '',
+  fallbackModel: '',
+  roleProbe: true,
+  agentsInstructions: true,
+  agentsInstructionsMaxBytes: 4096,
+  backfill: false,
+  maxInputBytes: 4096,
+  maxOutputTokens: 4096,
+  timeoutMs: 60000,
+  retryAttempts: 3,
+  retryDelayMs: 500,
+};
+const sampleModels = [
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    models: [
+      { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' },
+    ],
+  },
+];
+const settingsOptions = {
+  languages: ['zh', 'en'],
+  types: ['功能', '修复', '探索'],
+  defaultTypes: sampleTypes,
+  models: sampleModels,
+};
+const sampleYaml = 'language: zh\n';
+const sampleFullYaml = "template: '[{date}][{type}] {topic}'\nlanguage: zh\nmaxOutputTokens: 4096\n";
+
+/** Mount the plugin with a scripted fetch and open the settings dialog. */
+async function openSettingsDialog(handler) {
+  const calls = [];
+  const fetchStub = async (url, init = {}) => { calls.push({ url, init }); return handler(url, init, calls); };
+  const { exported } = await loadClient({ fetch: fetchStub, setTimeout, clearTimeout });
+  const { ctx, registrations, menus, notices } = createContext();
+  exported.apply(ctx);
+  const overlay = registrations.find(entry => entry.options.id === 'session-title-template.settings-dialog');
+  if (overlay === undefined) throw new Error('settings dialog must register its own shell.overlay slot');
+  const [group] = menus[0].resolve({ sessionId: 'S1', displayTitle: 'x' }, new AbortController().signal);
+  const row = group.children.find(child => child.id === 'title.settings');
+  const render = () => expand(overlay.component({}));
+  const selectTab = (tabId) => {
+    const tab = findElement(render(), node => node.props?.role === 'tab' && textOf(node).includes(`settings.tab.${tabId}`))[0];
+    if (tab === undefined) throw new Error(`tab ${tabId} not found`);
+    tab.props.onClick();
+  };
+  return { calls, overlay, row, notices, render, selectTab };
+}
+
+/** Mount the plugin-detail YAML editor registered in `plugins.bundle.config`. */
+async function mountYamlEditor(handler) {
+  const calls = [];
+  const fetchStub = async (url, init = {}) => { calls.push({ url, init }); return handler(url, init, calls); };
+  const { exported } = await loadClient({ fetch: fetchStub, setTimeout, clearTimeout });
+  const { ctx, registrations } = createContext();
+  exported.apply(ctx);
+  const slot = registrations.find(entry => entry.options.name === 'plugins.bundle.config');
+  if (slot === undefined) throw new Error('YAML editor must register in plugins.bundle.config');
+  const mounted = mountOnce(slot.component({ view: 'page' }));
+  await tick();
+  return {
+    calls,
+    slot,
+    render: () => expand(slot.component({ view: 'page' })),
+    unmount: mounted.unmount,
+  };
+}
+
+const tick = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
+
+check('naming settings opens from the menu, even on a cold session, and stays closed until invoked', async () => {
+  const { overlay, row } = await openSettingsDialog(async () => reply(200, { editable: true, values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml }));
+  if (expand(overlay.component({})) !== null) throw new Error('settings dialog must stay closed before invocation');
+  if (row.disabled === true) throw new Error('naming settings is a form about the plugin, not one session; it must stay enabled');
+  if (row.icon?.key !== 'session-title-template.settings') throw new Error('naming settings needs its own icon');
+});
+
+check('naming settings loads into four tabs with live preview and Style A dirty-only reload notice', async () => {
+  const { calls, row, render, selectTab } = await openSettingsDialog(async () => reply(200, {
+    editable: true, values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml,
+  }));
+  await row.run();
+  if (calls[0].url !== 'session-title-template/settings') throw new Error(`unexpected route: ${calls[0].url}`);
+  const tree = render();
+  if (findElement(tree, node => node.props?.role === 'dialog').length !== 1) throw new Error('expected one dialog');
+  const tabs = findElement(tree, node => node.props?.role === 'tab');
+  if (tabs.length !== 4) throw new Error(`expected 4 tabs, got ${tabs.length}`);
+  // Clean state must NOT show the Style A reload warning yet.
+  if (textOf(tree).includes('settings.restartNote')) {
+    throw new Error('Style A reload notice must stay hidden until a field is dirty');
+  }
+  const preview = findElement(tree, node => node.props?.['data-testid'] === 'settings-preview')[0];
+  if (!preview || !textOf(preview).includes('[功能]')) {
+    throw new Error(`live preview did not render formatted title: ${preview ? textOf(preview) : 'missing'}`);
+  }
+  const save = findElement(tree, node => node.type === 'button' && textOf(node).includes('settings.save'))[0];
+  if (save?.props.disabled !== true) throw new Error('Save must be disabled until something changes');
+
+  // The settings modal keeps one fixed frame across tabs and collapsible sections.
+  const dialogStyle = findElement(tree, node => node.props?.role === 'dialog')[0]?.props?.style;
+  if (typeof dialogStyle?.height !== 'string' || !dialogStyle.height.includes('736px')) {
+    throw new Error(`settings modal should use a fixed height, got ${dialogStyle?.height}`);
+  }
+  if (dialogStyle?.maxHeight !== 'calc(100% - 48px)') {
+    throw new Error(`settings modal should cap its fixed frame against the padded viewport, got ${dialogStyle?.maxHeight}`);
+  }
+  for (const tabId of ['format', 'types', 'models', 'behavior']) {
+    selectTab(tabId);
+    const tabTree = render();
+    for (const control of [
+      ...findElement(tabTree, node => node.type === 'select' || node.type === 'input'),
+      ...findElement(tabTree, node => node.props?.role === 'switch'),
+    ]) {
+      if (typeof control.props['aria-label'] !== 'string' || control.props['aria-label'] === '') {
+        throw new Error(`control on tab ${tabId} needs an accessible aria-label`);
+      }
+    }
+  }
+});
+
+check('editing format fields updates live preview, reveals Style A reload notice, and saves only changed fields', async () => {
+  const { calls, row, render } = await openSettingsDialog(async (url, init) => {
+    if (init.method === 'POST') {
+      return reply(200, {
+        saved: true, restarted: true,
+        values: { ...settingsValues, template: '({date}) {type}: {topic}', language: 'en', topicMaxChars: 30 },
+        yaml: 'language: en\n', fullYaml: sampleFullYaml,
+      });
+    }
+    return reply(200, { editable: true, values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml });
+  });
+  await row.run();
+  const change = (predicate, value) => {
+    const control = findElement(render(), predicate)[0];
+    if (control === undefined) throw new Error('control not found');
+    control.props.onChange({ target: { value } });
+  };
+  change(node => node.type === 'input' && node.props['aria-label'] === 'settings.template', '({date}) {type}: {topic}');
+  change(node => node.type === 'select' && node.props['aria-label'] === 'settings.language', 'en');
+  change(node => node.type === 'input' && node.props['aria-label'] === 'settings.topicMax', '30');
+
+  const dirtyTree = render();
+  if (!textOf(dirtyTree).includes('settings.restartNote')) {
+    throw new Error('Style A reload notice must appear once fields are dirty');
+  }
+  const preview = findElement(dirtyTree, node => node.props?.['data-testid'] === 'settings-preview')[0];
+  if (!textOf(preview).includes('功能: settings.preview.sampleTopicEn')) {
+    throw new Error(`live preview did not reflect updated template/language: ${textOf(preview)}`);
+  }
+
+  const saveButton = () => findElement(render(), node => node.type === 'button' && textOf(node).includes('settings.save'))[0];
+  if (saveButton().props.disabled === true) throw new Error('Save must enable once a field differs');
+  saveButton().props.onClick();
+  await tick();
+  const post = calls.find(call => call.init.method === 'POST');
+  if (post === undefined) throw new Error('no POST was sent');
+  const body = JSON.parse(post.init.body);
+  if (JSON.stringify(body) !== JSON.stringify({ changes: { template: '({date}) {type}: {topic}', language: 'en', topicMaxChars: 30 } })) {
+    throw new Error(`only the changed fields may be sent, got ${post.init.body}`);
+  }
+  if (!textOf(render()).includes('settings.saved')) throw new Error('success must be reported in the dialog');
+  if (saveButton().props.disabled !== true) throw new Error('Save must disable again once the values are saved');
+});
+
+check('types tab keeps provisional status and refinement count inside each vocabulary row', async () => {
+  const { calls, row, render, selectTab } = await openSettingsDialog(async (url, init) => {
+    if (init.method === 'POST') {
+      const body = JSON.parse(init.body);
+      return reply(200, { saved: true, restarted: true, values: { ...settingsValues, ...body.changes }, yaml: sampleYaml, fullYaml: sampleFullYaml });
+    }
+    return reply(200, { editable: true, values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml });
+  });
+  await row.run();
+  selectTab('types');
+  const collapsed = render();
+  if (findElement(collapsed, node => node.type === 'input' && node.props['aria-label'] === 'settings.types.keyAria:{"index":1}').length !== 0) {
+    throw new Error('vocabulary table should start collapsed');
+  }
+  const toggle = findElement(collapsed, node => node.type === 'button' && node.props['aria-expanded'] === false && node.props['aria-label'] === 'settings.group.types')[0];
+  if (toggle === undefined) throw new Error('vocabulary card should expose one collapsed toggle');
+  toggle.props.onClick();
+  const open = render();
+  const provisional = findElement(open, node => node.props?.role === 'switch' && String(node.props['aria-label']).includes('settings.types.provisionalAria'));
+  if (provisional.length !== 3) throw new Error(`expected one provisional switch per row, got ${provisional.length}`);
+  const count = findElement(open, node => node.type === 'input' && String(node.props['aria-label']).includes('settings.types.countAria'));
+  if (count.length !== 3) throw new Error(`expected one refinement input per row, got ${count.length}`);
+  const firstCount = count[2];
+  firstCount.props.onChange({ target: { value: '6' } });
+  findElement(render(), node => node.type === 'button' && textOf(node).includes('settings.save'))[0].props.onClick();
+  await tick();
+  const post = calls.find(call => call.init.method === 'POST');
+  const body = JSON.parse(post.init.body);
+  if (body.changes.types?.find((entry) => entry.key === '探索')?.maxRefinements !== 6) {
+    throw new Error(`per-type refinement count was not saved: ${post.init.body}`);
+  }
+});
+
+check('models tab merges main, subagent, and fallback routes into Generation card and supports catalog + manual entry', async () => {
+  const { calls, row, render, selectTab } = await openSettingsDialog(async (url, init) => {
+    if (init.method === 'POST') {
+      const body = JSON.parse(init.body);
+      return reply(200, { saved: true, restarted: true, values: { ...settingsValues, ...body.changes }, yaml: sampleYaml, fullYaml: sampleFullYaml });
+    }
+    return reply(200, { editable: true, values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml });
+  });
+  await row.run();
+  selectTab('models');
+  const tree = render();
+  if (textOf(tree).includes('settings.model.note')) {
+    throw new Error('redundant paired-route helper note must not render');
+  }
+  if (!textOf(tree).includes('settings.group.models')) {
+    throw new Error('models tab must render unified Generation section');
+  }
+  const primarySelect = findElement(tree, node => node.type === 'select' && node.props['aria-label'] === 'settings.primaryRoute')[0];
+  const subagentSelect = findElement(tree, node => node.type === 'select' && node.props['aria-label'] === 'settings.subagentRoute')[0];
+  const fallbackSelect = findElement(tree, node => node.type === 'select' && node.props['aria-label'] === 'settings.fallbackRoute')[0];
+  if (!primarySelect || !subagentSelect || !fallbackSelect) {
+    throw new Error('main, subagent, and fallback model selectors must all render');
+  }
+
+  // Choose DeepSeek Chat for main agent and DeepSeek Reasoner for subagent from catalog.
+  primarySelect.props.onChange({ target: { value: 'deepseek\u0000deepseek-chat' } });
+  subagentSelect.props.onChange({ target: { value: 'deepseek\u0000deepseek-reasoner' } });
+  // Switch fallback route to manual custom entry and type provider/model.
+  fallbackSelect.props.onChange({ target: { value: '__custom__' } });
+  const fbProvider = findElement(render(), node => node.type === 'input' && node.props['aria-label'] === 'settings.fallbackProvider')[0];
+  const fbModel = findElement(render(), node => node.type === 'input' && node.props['aria-label'] === 'settings.fallbackModel')[0];
+  if (!fbProvider || !fbModel) throw new Error('selecting custom route must reveal manual Provider and Model inputs');
+  fbProvider.props.onChange({ target: { value: 'custom-p' } });
+  fbModel.props.onChange({ target: { value: 'custom-m' } });
+
+  findElement(render(), node => node.type === 'button' && textOf(node).includes('settings.save'))[0].props.onClick();
+  await tick();
+  const post = calls.find(call => call.init.method === 'POST');
+  const body = JSON.parse(post.init.body);
+  if (JSON.stringify(body.changes) !== JSON.stringify({
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    subagentProvider: 'deepseek',
+    subagentModel: 'deepseek-reasoner',
+    fallbackProvider: 'custom-p',
+    fallbackModel: 'custom-m',
+  })) {
+    throw new Error(`unexpected model changes payload: ${post.init.body}`);
+  }
+});
+
+check('behavior tab expands advanced parameters and surfaces numeric/Host validation cleanly', async () => {
+  const { calls, row, render, selectTab } = await openSettingsDialog(async (url, init) => {
+    if (init.method === 'POST') {
+      return reply(400, { code: 'invalid-settings', message: 'session-title-template: config.topicMaxChars must not be smaller than topicMinChars' });
+    }
+    return reply(200, { editable: true, values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml });
+  });
+  await row.run();
+  selectTab('behavior');
+  if (findElement(render(), node => node.type === 'input' && node.props['aria-label'] === 'settings.timeoutMs').length !== 0) {
+    throw new Error('advanced parameters should start collapsed');
+  }
+  const disclosure = findElement(render(), node => node.type === 'button' && node.props['aria-expanded'] === false)[0];
+  disclosure.props.onClick();
+  const timeoutField = findElement(render(), node => node.type === 'input' && node.props['aria-label'] === 'settings.timeoutMs')[0];
+  if (timeoutField === undefined) throw new Error('expanding advanced section must reveal timeoutMs');
+  timeoutField.props.onChange({ target: { value: 'abc' } });
+
+  // Jump back to format tab and press Save: client should reject without POST and navigate back to behavior tab.
+  selectTab('format');
+  const save = () => findElement(render(), node => node.type === 'button' && textOf(node).includes('settings.save'))[0];
+  const reset = () => findElement(render(), node => node.type === 'button' && textOf(node).includes('settings.reset'))[0];
+  if (save().props.disabled === true) throw new Error('Save must stay enabled on an invalid numeric draft');
+  if (reset().props.disabled === true) throw new Error('Revert must enable on an invalid numeric draft');
+  save().props.onClick();
+  await tick();
+  if (calls.some(call => call.init.method === 'POST')) throw new Error('an invalid numeric value must not reach the Host');
+  if (!textOf(render()).includes('settings.invalidNumber')) throw new Error('the numeric error must be shown');
+  if (findElement(render(), node => node.type === 'input' && node.props['aria-label'] === 'settings.timeoutMs').length !== 1) {
+    throw new Error('saving with an invalid advanced field must switch back to behavior tab and keep advanced expanded');
+  }
+
+  // Revert, then trigger a Host 400 validation message.
+  reset().props.onClick();
+  selectTab('format');
+  const maxField = findElement(render(), node => node.type === 'input' && node.props['aria-label'] === 'settings.topicMax')[0];
+  maxField.props.onChange({ target: { value: '3' } });
+  save().props.onClick();
+  await tick();
+  const text = textOf(render());
+  if (!text.includes('settings.invalid') || !text.includes('topicMaxChars must not be smaller')) {
+    throw new Error(`the Host message must be shown without its plugin prefix: ${text}`);
+  }
+  if (text.includes('session-title-template: config')) throw new Error('the plugin prefix must be stripped from the Host message');
+});
+
+check('a profile that cannot save keeps the form read-only and an unreachable route says to restart', async () => {
+  const readOnly = await openSettingsDialog(async () => reply(200, {
+    editable: false, reason: 'editor-unavailable', values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml,
+  }));
+  await readOnly.row.run();
+  const tree = readOnly.render();
+  if (!textOf(tree).includes('settings.editorUnavailable')) throw new Error('the read-only reason must be explained');
+  const save = findElement(tree, node => node.type === 'button' && textOf(node).includes('settings.save'))[0];
+  if (save.props.disabled !== true) throw new Error('Save must stay disabled without an editor');
+  for (const tabId of ['format', 'types', 'models', 'behavior']) {
+    readOnly.selectTab(tabId);
+    for (const toggle of findElement(readOnly.render(), node => node.type === 'button' && node.props['aria-expanded'] === false)) {
+      toggle.props.onClick();
+    }
+    const tabTree = readOnly.render();
+    for (const control of [
+      ...findElement(tabTree, node => node.type === 'input' || node.type === 'select'),
+      ...findElement(tabTree, node => node.props?.role === 'switch' || node.props?.role === 'checkbox'),
+    ]) {
+      if (control.props.disabled !== true) throw new Error(`read-only form must disable control ${control.props['aria-label']}`);
+    }
+  }
+
+  const missing = await openSettingsDialog(async () => ({ ok: false, status: 404, json: async () => { throw new Error('not json'); } }));
+  await missing.row.run();
+  if (!textOf(missing.render()).includes('settings.needsReload')) throw new Error('a missing route must tell the user to restart DSH');
+});
+
+check('a save whose reply is lost to the plugin restart is verified by deep-equal read-back', async () => {
+  let reads = 0;
+  const updatedTypes = [
+    { key: '功能', hint: '新增能力', provisional: false },
+    { key: '修复', hint: '排障纠错', provisional: false },
+    { key: '探索', hint: '已更新说明', provisional: true },
+  ];
+  const { row, render, selectTab } = await openSettingsDialog(async (url, init) => {
+    if (init.method === 'POST') throw new TypeError('network connection lost');
+    reads += 1;
+    return reply(200, {
+      editable: true,
+      values: reads === 1 ? settingsValues : { ...settingsValues, types: updatedTypes },
+      options: settingsOptions,
+      yaml: sampleYaml,
+      fullYaml: sampleFullYaml,
+    });
+  });
+  await row.run();
+  selectTab('types');
+  findElement(render(), node => node.type === 'button' && node.props['aria-expanded'] === false && node.props['aria-label'] === 'settings.group.types')[0].props.onClick();
+  findElement(render(), node => node.type === 'input' && node.props['aria-label'] === 'settings.types.hintAria:{"index":3}')[0]
+    .props.onChange({ target: { value: '已更新说明' } });
+  findElement(render(), node => node.type === 'button' && textOf(node).includes('settings.save'))[0].props.onClick();
+  await tick(1400);
+  if (!textOf(render()).includes('settings.saved')) throw new Error('a restart-dropped reply with deep-equal types must count as saved');
+});
+
+check('plugin detail YAML editor loads, expands full config, validates syntax, saves and resets cleanly', async () => {
+  let activeYaml = sampleYaml;
+  const { calls, render, unmount } = await mountYamlEditor(async (url, init) => {
+    if (init.method === 'POST') {
+      const body = JSON.parse(init.body);
+      if (body.mode === 'reset') {
+        activeYaml = '{}\n';
+        return reply(200, { saved: true, restarted: true, values: settingsValues, yaml: activeYaml, fullYaml: sampleFullYaml });
+      }
+      if (body.yaml.includes('bad:')) {
+        return reply(400, { code: 'invalid-yaml', message: 'YAML syntax error on line 2: unexpected token' });
+      }
+      activeYaml = body.yaml;
+      return reply(200, { saved: true, restarted: true, values: settingsValues, yaml: activeYaml, fullYaml: sampleFullYaml });
+    }
+    return reply(200, { editable: true, values: settingsValues, options: settingsOptions, yaml: activeYaml, fullYaml: sampleFullYaml });
+  });
+
+  const textarea = () => findElement(render(), node => node.type === 'textarea')[0];
+  const button = (labelKey) => findElement(render(), node => node.type === 'button' && textOf(node).includes(labelKey))[0];
+
+  if (textarea()?.props.value !== sampleYaml) throw new Error(`expected initial YAML, got: ${textarea()?.props.value}`);
+  if (textOf(render()).includes('settings.restartNote')) throw new Error('YAML editor footer must stay silent until edited');
+  if (button('yaml.save').props.disabled !== true) throw new Error('Save YAML must be disabled before editing');
+
+  // Expand full config populates textarea and reveals Style A reload reminder.
+  button('yaml.expandFull').props.onClick();
+  if (textarea().props.value !== sampleFullYaml) throw new Error('Expand full config must load fullYaml');
+  if (!textOf(render()).includes('settings.restartNote')) throw new Error('Style A reload notice must appear when YAML is dirty');
+
+  // Syntax error from Host surfaces cleanly.
+  textarea().props.onChange({ target: { value: 'language: zh\nbad: "unterminated\n' } });
+  button('yaml.save').props.onClick();
+  await tick();
+  if (!textOf(render()).includes('YAML syntax error on line 2')) {
+    throw new Error(`YAML syntax error was not surfaced: ${textOf(render())}`);
+  }
+
+  // Valid YAML save sends mode: 'yaml' and disables Save again.
+  textarea().props.onChange({ target: { value: 'language: en\n' } });
+  button('yaml.save').props.onClick();
+  await tick();
+  const yamlPost = calls.filter(c => c.init.method === 'POST').at(-1);
+  if (JSON.parse(yamlPost.init.body).mode !== 'yaml') throw new Error(`expected yaml save mode, got ${yamlPost.init.body}`);
+  if (!textOf(render()).includes('settings.saved')) throw new Error('YAML save success must be reported');
+  if (button('yaml.save').props.disabled !== true) throw new Error('Save YAML must disable again after saving');
+
+  // Inline confirm reset sends mode: 'reset'.
+  button('yaml.resetDefaults').props.onClick();
+  const confirm = button('yaml.confirmReset');
+  if (confirm === undefined) throw new Error('clicking Reset defaults must ask for inline confirmation');
+  confirm.props.onClick();
+  await tick();
+  const resetPost = calls.filter(c => c.init.method === 'POST').at(-1);
+  if (JSON.parse(resetPost.init.body).mode !== 'reset') throw new Error(`expected reset mode, got ${resetPost.init.body}`);
+  if (!textOf(render()).includes('yaml.resetDone')) throw new Error('YAML reset success must be reported');
+  unmount();
+});
+
+check('plugin detail YAML editor stays read-only when profile has no configEditor', async () => {
+  const { render, unmount } = await mountYamlEditor(async () => reply(200, {
+    editable: false, reason: 'editor-unavailable', values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml,
+  }));
+  const tree = render();
+  if (!textOf(tree).includes('settings.editorUnavailable')) throw new Error('read-only YAML editor must explain why saving is disabled');
+  const textarea = findElement(tree, node => node.type === 'textarea')[0];
+  if (textarea?.props.disabled !== true) throw new Error('read-only YAML editor must disable textarea');
+  const save = findElement(tree, node => node.type === 'button' && textOf(node).includes('yaml.save'))[0];
+  if (save?.props.disabled !== true) throw new Error('read-only YAML editor must disable Save YAML');
+  unmount();
 });
 
 let failed = 0;

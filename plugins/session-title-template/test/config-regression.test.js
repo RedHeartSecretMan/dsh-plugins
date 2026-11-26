@@ -2,6 +2,21 @@ import assert from "node:assert/strict";
 import { it } from "node:test";
 import { DEFAULTS, resolveConfig } from "../lib/config.js";
 
+it("defaults UI language and subagent delegation behavior", () => {
+  const defaults = resolveConfig();
+  assert.equal(DEFAULTS.uiLanguage, 'auto');
+  assert.equal(defaults.uiLanguage, 'auto');
+  assert.equal(defaults.subagentDelegationLabel, true);
+  assert.equal(resolveConfig({ uiLanguage: 'zh', subagentDelegationLabel: false }).uiLanguage, 'zh');
+  assert.equal(resolveConfig({ uiLanguage: 'zh', subagentDelegationLabel: false }).subagentDelegationLabel, false);
+  for (const value of ['fr', '', null, false]) {
+    assert.throws(() => resolveConfig({ uiLanguage: value }), /uiLanguage/u);
+  }
+  for (const value of ['false', null, 0, 1]) {
+    assert.throws(() => resolveConfig({ subagentDelegationLabel: value }), /subagentDelegationLabel/u);
+  }
+});
+
 it("defaults AGENTS naming guidance and freezes independent resolved settings", () => {
   assert.deepEqual(DEFAULTS.agentsInstructions, { enabled: true, maxBytes: 4096 });
   const defaults = resolveConfig();
@@ -77,6 +92,29 @@ it("requires paired routes and strictly typed vocabulary, flags, and hints", () 
   assert.throws(() => resolveConfig({ maxExploreRefinements: null }), /maxExploreRefinements is an unknown key/u);
   assert.throws(() => resolveConfig({ retitle: null }), /retitle is an unknown key/u);
   assert.equal(resolveConfig({ provider: "p", model: "m" }).provider, "p");
+
+  const withSubagent = resolveConfig({ subagentRoute: { provider: "sp", model: "sm" } });
+  assert.deepEqual(withSubagent.subagentRoute, { provider: "sp", model: "sm" });
+  assert.ok(Object.isFrozen(withSubagent.subagentRoute));
+  assert.throws(() => resolveConfig({ subagentRoute: { provider: "sp" } }), /subagentRoute\.model/u);
+  assert.throws(() => resolveConfig({ subagentRoute: { provider: "sp", model: "sm", extra: 1 } }), /subagentRoute\.extra/u);
+
+  const perType = resolveConfig({
+    types: [
+      { key: "fix", hint: "Bugs" },
+      { key: "explore", hint: "Probe", provisional: true, maxRefinements: 6 },
+    ],
+    fallbackType: "explore",
+  });
+  assert.equal(perType.types[1].maxRefinements, 6);
+  assert.throws(
+    () => resolveConfig({ types: [{ key: "fix", maxRefinements: 3 }, "feat"], fallbackType: "fix" }),
+    /maxRefinements requires provisional: true/u,
+  );
+  assert.throws(
+    () => resolveConfig({ types: [{ key: "fix", provisional: true, maxRefinements: 0 }, "feat"], fallbackType: "fix" }),
+    /maxRefinements must be an integer from 1 to 100/u,
+  );
 });
 
 it("accepts each placeholder exactly once and only complete date tokens", () => {

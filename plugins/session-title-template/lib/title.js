@@ -13,6 +13,7 @@
 export {
   cleanTitleText,
   formatCjkSpacing,
+  hardTruncateTopic,
   measureTopicWidth,
   normalizeTopic,
   truncateTopic,
@@ -25,6 +26,7 @@ export {
   isFormattedTitle,
   isSettledTitle,
   parseModelTitle,
+  provisionalRefinementLimit,
   renderTitle,
 } from './title/format.js';
 

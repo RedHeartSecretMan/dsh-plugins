@@ -13,6 +13,8 @@ import {
   TRAILING_PUNCTUATION,
   cleanTitleText,
   formatCjkSpacing,
+  hardTruncateTopic,
+  measureTopicWidth,
   normalizeTopic,
   truncateTopic,
 } from './text.js';
@@ -263,16 +265,49 @@ export function isSettledTitle(title, options) {
 }
 
 /**
+ * Return the configured refinement window for a canonical provisional title,
+ * falling back to `defaultLimit` when the type entry omits `maxRefinements`, or
+ * `undefined` when the title is non-canonical or already settled.
+ *
+ * @param title - Existing title text.
+ * @param options - Same shape accepted by {@link parseModelTitle}.
+ * @param defaultLimit - Global fallback refinement window.
+ * @returns Refinement limit for this provisional type, or `undefined`.
+ */
+export function provisionalRefinementLimit(title, options, defaultLimit) {
+  const parsed = readCanonicalTitle(title, options);
+  if (!parsed) return undefined;
+  const entry = options.types.find((item) => item.key === parsed.type);
+  if (entry?.provisional !== true) return undefined;
+  return Number.isInteger(entry.maxRefinements) ? entry.maxRefinements : defaultLimit;
+}
+
+/**
  * Build the deterministic fallback title used when no model route is available.
  *
  * @param options - Date, template, fallback type, source text, spacing, limit.
  * @returns A template-shaped title derived from the first user message.
  */
 export function buildFallbackTitle(options) {
-  const { date, template, fallbackType, sourceText, cjkSpacing, topicMaxChars } = options;
+  const { date, template, fallbackType, sourceText, cjkSpacing, topicMaxChars, fallbackTruncation = 'natural' } = options;
+  const limit = topicMaxChars > 0 ? topicMaxChars : 20;
   let topic = cleanTitleText(sourceText).replace(TRAILING_PUNCTUATION, "");
   if (cjkSpacing) topic = formatCjkSpacing(topic);
-  const limit = topicMaxChars > 0 ? topicMaxChars : 20;
-  topic = truncateTopic(topic, limit).trim();
+  // When a multi-line first message overflows the budget (e.g. a brief task line
+  // followed by pasted logs or stack traces), prefer the first substantive line
+  // before applying natural sentence/word truncation.
+  if (typeof sourceText === "string" && /[\r\n]/u.test(sourceText) && measureTopicWidth(topic) > limit) {
+    const firstLine = sourceText.split(/\r?\n/u).map((line) => cleanTitleText(line)).find(Boolean);
+    if (firstLine) {
+      let candidate = firstLine.replace(TRAILING_PUNCTUATION, "");
+      if (cjkSpacing) candidate = formatCjkSpacing(candidate);
+      const minLineWidth = Math.min(6, Math.max(2, Math.floor(limit * 0.4)));
+      if (measureTopicWidth(candidate) >= minLineWidth) {
+        topic = candidate;
+      }
+    }
+  }
+  topic = (fallbackTruncation === 'hard' ? hardTruncateTopic(topic, limit) : truncateTopic(topic, limit))
+    .replace(TRAILING_PUNCTUATION, '').trim();
   return renderTitle(template, { date, type: fallbackType, topic: topic || fallbackType });
 }

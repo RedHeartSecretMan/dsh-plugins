@@ -105,6 +105,29 @@ test('resolveTargets reports no routes when none resolves', () => {
   assert.equal(resolveTargets(config, { session }, { targeted: false }, ctx).none, true);
 });
 
+test('resolveTargets routes subagents to subagentRoute when set, otherwise follows main config', () => {
+  const ctx = { sessionProjections: { stateOf: () => undefined }, llm: {} };
+  const withSubagent = resolveConfig({
+    provider: 'main-p',
+    model: 'main-m',
+    subagentRoute: { provider: 'sub-p', model: 'sub-m' },
+    backfill: { fallbackRoute: { provider: 'fb-p', model: 'fb-m' } },
+  });
+  const rootSession = { header: { createdAt: 1 } };
+  const subSession = { header: { createdAt: 1, origin: 'subagent' } };
+
+  const rootTargets = resolveTargets(withSubagent, { session: rootSession }, { targeted: false }, ctx);
+  assert.deepEqual(rootTargets.routes, [{ provider: 'main-p', model: 'main-m' }, { provider: 'fb-p', model: 'fb-m' }]);
+
+  const subTargets = resolveTargets(withSubagent, { session: subSession }, { targeted: false }, ctx);
+  assert.deepEqual(subTargets.routes, [{ provider: 'sub-p', model: 'sub-m' }, { provider: 'fb-p', model: 'fb-m' }]);
+
+  // Without subagentRoute, a subagent falls back to the main agent config.
+  const withoutSubagent = resolveConfig({ provider: 'main-p', model: 'main-m' });
+  const inherited = resolveTargets(withoutSubagent, { session: subSession }, { targeted: false }, ctx);
+  assert.deepEqual(inherited.routes, [{ provider: 'main-p', model: 'main-m' }]);
+});
+
 test('the composed prompt names the template and the current title anchor', () => {
   const context = resolveContext(request(), deps);
   const plan = { currentTitle: { title: '[1124][修复] 旧标题', canonical: true }, hint: undefined };

@@ -77,3 +77,55 @@ test('planning is pure: the same context yields the same plan', () => {
   assert.deepEqual(planTitle(input), planTitle(input));
   assert.equal(input.messages.length, 1, 'the input is not mutated');
 });
+
+test('per-type maxRefinements overrides the global window for each provisional type', () => {
+  const custom = resolveConfig({
+    types: [
+      { key: '功能', hint: '新增能力' },
+      { key: '探索', hint: '初步理解', provisional: true, maxRefinements: 6 },
+      { key: '研究', hint: '调研对比', provisional: true, maxRefinements: 2 },
+      { key: '草稿', hint: '待定', provisional: true },
+    ],
+    fallbackType: '探索',
+    maxProvisionalRefinements: 4,
+  });
+  const customOptions = {
+    pattern: compileTitlePattern(custom.template, custom.types.map(type => type.key)),
+    date,
+    template: custom.template,
+    types: custom.types,
+    fallbackType: custom.fallbackType,
+    cjkSpacing: custom.cjkSpacing,
+    topicMaxChars: custom.topicMaxChars,
+  };
+  const makeMessages = (count) => Array.from({ length: count }, (_, idx) => ({
+    seq: idx + 1,
+    text: `继续排查登录回调超时的第 ${idx + 1} 轮细节日志分析`,
+  }));
+  const titleFor = (type) => ({
+    title: `[1124][${type}] 排查登录回调超时日志分析`,
+    source: { kind: 'provider', model: { provider: 'p', model: 'm' } },
+    messageSeqs: [1],
+  });
+
+  // At 3 messages: 研究 (limit 2) closes, while 草稿 (fallback 4) and 探索 (limit 6) refine.
+  const three = makeMessages(3);
+  assert.equal(
+    planTitle(context({ messages: three, current: titleFor('研究'), options: customOptions, lastEvaluated: { seq: 2, count: 2 }, maxProvisionalRefinements: 4 })).reason,
+    'provisional-window-closed',
+  );
+  assert.equal(
+    planTitle(context({ messages: three, current: titleFor('草稿'), options: customOptions, lastEvaluated: { seq: 2, count: 2 }, maxProvisionalRefinements: 4 })).reason,
+    'provisional-refinement',
+  );
+  // At 5 messages: 草稿 (fallback 4) closes, while 探索 (limit 6) still refines.
+  const five = makeMessages(5);
+  assert.equal(
+    planTitle(context({ messages: five, current: titleFor('草稿'), options: customOptions, lastEvaluated: { seq: 4, count: 4 }, maxProvisionalRefinements: 4 })).reason,
+    'provisional-window-closed',
+  );
+  assert.equal(
+    planTitle(context({ messages: five, current: titleFor('探索'), options: customOptions, lastEvaluated: { seq: 4, count: 4 }, maxProvisionalRefinements: 4 })).reason,
+    'provisional-refinement',
+  );
+});

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Add a four-tab **Naming settings** modal under the `Session title ›` submenu (available on both cold and live sessions):
+  - **Format** tab with a live title preview, `template`, `language`, `topicMinChars`–`topicMaxChars`, `cjkSpacing`, `dateFormat`, and `timezone`.
+  - **Types** tab with an inline `types` vocabulary editor (add/remove/rename, hints, `provisional` flags, automatic `fallbackType` sync, restore-defaults) and `maxProvisionalRefinements`.
+  - **Models** tab with `ctx.llm`-discovered provider/model dropdowns plus manual entry for both the primary route (`provider`/`model`) and the fallback route (`backfill.fallbackRoute`).
+  - **Behavior** tab with AGENTS.md supplements (`enabled` + `maxBytes`), role probe, backfill toggle, and a collapsible advanced request-tuning section (`maxInputBytes`, `maxOutputTokens`, `timeoutMs`, `retryAttempts`, `retryDelayMs`).
+  - Compact dirty-only inline reload notice in the modal footer.
+- Add a developer **YAML configuration** editor on the plugin's detail page via `plugins.bundle.config` (`key: '@redheartsecretman/session-title-template'`), backed by a zero-dependency YAML 1.2 subset parser/serializer (`lib/yaml.js`), supporting full `config` edits (including `backfill.retitle`), expanding full defaults, line-numbered syntax validation, schema validation, and inline-confirmed reset to bundle defaults.
+- Persist both settings surfaces through the Harness config editor (`ctx.get('configEditor').edit(ctx.fiber.entry, …)`) behind an owner-only `GET`/`POST /session-title-template/settings` route (`form`, `yaml`, and `reset` modes) instead of rewriting `cordis.patch.yml`. Comments, other plugins' rows, and `!!js` expressions survive; higher-layer overrides and read-only profiles are reported explicitly; unchanged writes are skipped; and restart-dropped replies are verified by deep-equal read-back.
+- Share the modal focus trap, Escape handling, and frame between the status and settings dialogs (`useModalBehavior`, `ModalFrame`).
+
 ## 0.2.0 — 2026-11-24
 
 - Retry failed title calls instead of giving up after one attempt. One round now walks every configured route (so a healthy `backfill.fallbackRoute` still wins immediately), and later rounds re-walk the set with exponential backoff; `retryAttempts` (default `3`) and `retryDelayMs` (default `500`) bound it. Input-budget failures stay single-shot because they repeat deterministically.
