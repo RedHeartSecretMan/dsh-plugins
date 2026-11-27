@@ -288,20 +288,34 @@ export function provisionalRefinementLimit(title, options, defaultLimit) {
  * @param options - Date, template, fallback type, source text, spacing, limit.
  * @returns A template-shaped title derived from the first user message.
  */
+/** Width a first-line candidate must reach before it replaces the joined topic. */
+const FIRST_LINE_MIN_WIDTH_RATIO = 0.4;
+
+/**
+ * Clean one topic candidate the way every fallback path expects: no surrounding
+ * noise, no trailing punctuation, and the configured CJK spacing.
+ *
+ * @param text - Raw candidate text.
+ * @param cjkSpacing - Whether to space Han text against Latin text.
+ * @returns The prepared candidate.
+ */
+function prepareTopicCandidate(text, cjkSpacing) {
+  const cleaned = cleanTitleText(text).replace(TRAILING_PUNCTUATION, '');
+  return cjkSpacing ? formatCjkSpacing(cleaned) : cleaned;
+}
+
 export function buildFallbackTitle(options) {
   const { date, template, fallbackType, sourceText, cjkSpacing, topicMaxChars, fallbackTruncation = 'natural' } = options;
   const limit = topicMaxChars > 0 ? topicMaxChars : 20;
-  let topic = cleanTitleText(sourceText).replace(TRAILING_PUNCTUATION, "");
-  if (cjkSpacing) topic = formatCjkSpacing(topic);
+  let topic = prepareTopicCandidate(sourceText, cjkSpacing);
   // When a multi-line first message overflows the budget (e.g. a brief task line
   // followed by pasted logs or stack traces), prefer the first substantive line
   // before applying natural sentence/word truncation.
   if (typeof sourceText === "string" && /[\r\n]/u.test(sourceText) && measureTopicWidth(topic) > limit) {
     const firstLine = sourceText.split(/\r?\n/u).map((line) => cleanTitleText(line)).find(Boolean);
     if (firstLine) {
-      let candidate = firstLine.replace(TRAILING_PUNCTUATION, "");
-      if (cjkSpacing) candidate = formatCjkSpacing(candidate);
-      const minLineWidth = Math.min(6, Math.max(2, Math.floor(limit * 0.4)));
+      const candidate = prepareTopicCandidate(firstLine, cjkSpacing);
+      const minLineWidth = Math.min(6, Math.max(2, Math.floor(limit * FIRST_LINE_MIN_WIDTH_RATIO)));
       if (measureTopicWidth(candidate) >= minLineWidth) {
         topic = candidate;
       }

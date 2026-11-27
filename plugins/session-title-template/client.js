@@ -1078,7 +1078,6 @@ window.__ModuleLoader__.load({
       timezone: 'format',
       fallbackType: 'types',
       maxProvisionalRefinements: 'types',
-      provisionalRules: 'types',
       types: 'types',
       provider: 'models',
       model: 'models',
@@ -1141,18 +1140,6 @@ window.__ModuleLoader__.load({
       };
     }
 
-    /** Extract provisional type rules in `{ key, maxRefinements }` form for the Policy card. */
-    function extractProvisionalRules(types, defaultLimit = DEFAULT_PROVISIONAL_LIMIT) {
-      const fallback = Number.isInteger(defaultLimit) && defaultLimit > 0 ? defaultLimit : 4;
-      if (!Array.isArray(types)) return [];
-      return types
-        .filter((entry) => entry?.provisional === true && String(entry?.key ?? '').trim() !== '')
-        .map((entry) => ({
-          key: String(entry.key).trim(),
-          maxRefinements: String(Number.isInteger(entry.maxRefinements) ? entry.maxRefinements : fallback),
-        }));
-    }
-
     /** Deep-clone a settings value object so draft edits never mutate saved values. */
     function cloneDraft(values) {
       if (values === null || typeof values !== 'object') return values;
@@ -1160,7 +1147,6 @@ window.__ModuleLoader__.load({
       return {
         ...values,
         ...(clonedTypes === undefined ? {} : { types: clonedTypes }),
-        ...(clonedTypes === undefined ? {} : { provisionalRules: extractProvisionalRules(clonedTypes, values.maxProvisionalRefinements) }),
       };
     }
 
@@ -1199,10 +1185,6 @@ window.__ModuleLoader__.load({
       const invalidFields = [];
       const dirtyTabs = new Set();
       for (const key of Object.keys(values)) {
-        if (key === 'provisionalRules' || key === 'maxProvisionalRefinements') {
-          // Per-type provisional limits are edited via `provisionalRules` and emitted on `types`.
-          continue;
-        }
         if (key === 'types') {
           let invalidTypeCount = false;
           const defaultLimit = Number.isInteger(draft?.maxProvisionalRefinements) && draft.maxProvisionalRefinements > 0
@@ -1312,8 +1294,9 @@ window.__ModuleLoader__.load({
       const date = formatPreviewDate(draft?.dateFormat, draft?.timezone);
       const types = Array.isArray(draft?.types) ? draft.types : [];
       const provisionalKeys = new Set(
-        (Array.isArray(draft?.provisionalRules) ? draft.provisionalRules : [])
-          .map((rule) => String(rule?.key ?? '').trim())
+        types
+          .filter((entry) => entry?.provisional === true)
+          .map((entry) => String(entry?.key ?? '').trim())
           .filter((key) => key !== ''),
       );
       const firstRegular = types.find((entry) => {
@@ -1451,7 +1434,6 @@ window.__ModuleLoader__.load({
             draft: cloneDraft(payload.values),
             options: payload.options ?? {},
             activeTab: 'format',
-            provisionalOpen: false,
             typesOpen: false,
             advancedOpen: false,
             customRoutes: { primary: false, subagent: false, fallback: false },
@@ -1488,11 +1470,10 @@ window.__ModuleLoader__.load({
         const firstInvalid = invalidFields[0];
         const targetTab = SETTINGS_FIELD_TAB[firstInvalid] ?? dialog.activeTab;
         const needsAdvanced = SETTINGS_ADVANCED_FIELDS.includes(firstInvalid) || firstInvalid === 'uiLanguage';
-        const needsProvisional = firstInvalid === 'provisionalRules';
-        store.set({
+          store.set({
           ...dialog,
           activeTab: targetTab,
-          typesOpen: dialog.typesOpen === true || needsProvisional,
+          typesOpen: dialog.typesOpen === true,
           advancedOpen: dialog.advancedOpen === true || needsAdvanced,
           notice: { kind: 'error', text: t('settings.invalidNumber') },
         });
@@ -2156,7 +2137,7 @@ window.__ModuleLoader__.load({
      * "did nothing": the form would save code this process never loaded. Stating
      * the mismatch, with the module that changed, is cheaper than guessing.
      */
-    function StaleHostBanner({ t }) {
+    function StaleHostBanner({ t, module: staleFile }) {
       return h('div', {
         role: 'alert',
         style: {
@@ -2167,7 +2148,7 @@ window.__ModuleLoader__.load({
         },
       },
         h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)', marginTop: 1 } }, glyph(WARNING_PARTS, 16)),
-        h('span', null, t('settings.staleHost')),
+        h('span', null, t('settings.staleHost', { module: staleFile ?? '' })),
       );
     }
 
@@ -2192,7 +2173,6 @@ window.__ModuleLoader__.load({
       const {
         loading, error, values, draft, options, editable, saving, notice, staleModule = null,
         activeTab = 'format',
-        provisionalOpen = false,
         typesOpen = false,
         advancedOpen = false,
         customRoutes = { primary: false, subagent: false, fallback: false },
@@ -2224,7 +2204,6 @@ window.__ModuleLoader__.load({
       const dateOptions = SETTINGS_DATE_FORMATS.includes(draft?.dateFormat) || draft === undefined
         ? SETTINGS_DATE_FORMATS : [draft.dateFormat, ...SETTINGS_DATE_FORMATS];
       const draftTypes = Array.isArray(draft?.types) ? draft.types : [];
-      const provisionalRules = Array.isArray(draft?.provisionalRules) ? draft.provisionalRules : [];
       const availableTypeKeys = (() => {
         const seen = new Set();
         const keys = [];
@@ -2240,8 +2219,6 @@ window.__ModuleLoader__.load({
         if (current !== '' && !keys.includes(current)) keys.unshift(current);
         return keys;
       })();
-      const usedProvisionalKeys = new Set(provisionalRules.map((rule) => String(rule?.key ?? '').trim()).filter(Boolean));
-      const nextUnusedProvisionalKey = availableTypeKeys.find((key) => !usedProvisionalKeys.has(key));
       const defaultTypes = Array.isArray(options?.defaultTypes) ? options.defaultTypes : [];
       const typesMatchDefaults = defaultTypes.length >= 2
         && deepEqual(normalizeVocabularyForDiff(draftTypes), normalizeVocabularyForDiff(defaultTypes));
@@ -2264,11 +2241,6 @@ window.__ModuleLoader__.load({
             if (oldKey !== '' && newKey !== '') {
               if (String(now.draft?.fallbackType ?? '').trim() === oldKey) {
                 nextDraft.fallbackType = newKey;
-              }
-              if (Array.isArray(now.draft?.provisionalRules)) {
-                nextDraft.provisionalRules = now.draft.provisionalRules.map((rule) => (
-                  String(rule?.key ?? '').trim() === oldKey ? { ...rule, key: newKey } : rule
-                ));
               }
             }
           }
@@ -2328,11 +2300,6 @@ window.__ModuleLoader__.load({
               const replacement = nextTypes.find((entry) => String(entry?.key ?? '').trim() !== '')?.key?.trim();
               if (replacement !== undefined) nextDraft.fallbackType = replacement;
             }
-            if (Array.isArray(now.draft?.provisionalRules)) {
-              nextDraft.provisionalRules = now.draft.provisionalRules.filter(
-                (rule) => String(rule?.key ?? '').trim() !== removedKey,
-              );
-            }
           }
           return { draft: nextDraft, notice: null };
         });
@@ -2358,52 +2325,8 @@ window.__ModuleLoader__.load({
           const nextFallback = restoredKeys.has(currentFallback)
             ? currentFallback
             : (restored.find((entry) => entry.provisional === true)?.key ?? restored[0].key);
-          const currentRules = Array.isArray(now.draft?.provisionalRules) ? now.draft.provisionalRules : [];
-          const nextRules = currentRules.filter((rule) => restoredKeys.has(String(rule?.key ?? '').trim()));
           return {
-            draft: {
-              ...now.draft,
-              types: restored,
-              fallbackType: nextFallback,
-              provisionalRules: nextRules,
-            },
-            notice: null,
-          };
-        });
-      };
-
-      const updateProvisionalRule = (index, patch) => {
-        if (locked) return;
-        patchDialog((now) => {
-          const currentRules = Array.isArray(now.draft?.provisionalRules) ? now.draft.provisionalRules : [];
-          const nextRules = currentRules.map((rule, idx) => (idx === index ? { ...rule, ...patch } : rule));
-          return { draft: { ...now.draft, provisionalRules: nextRules }, notice: null };
-        });
-      };
-
-      const removeProvisionalRule = (index) => {
-        if (locked) return;
-        patchDialog((now) => {
-          const currentRules = Array.isArray(now.draft?.provisionalRules) ? now.draft.provisionalRules : [];
-          return {
-            draft: { ...now.draft, provisionalRules: currentRules.filter((_, idx) => idx !== index) },
-            notice: null,
-          };
-        });
-      };
-
-      const addProvisionalRule = () => {
-        if (locked || nextUnusedProvisionalKey === undefined) return;
-        patchDialog((now) => {
-          const currentRules = Array.isArray(now.draft?.provisionalRules) ? now.draft.provisionalRules : [];
-          const defaultCount = Number.isInteger(now.values?.maxProvisionalRefinements) && now.values.maxProvisionalRefinements > 0
-            ? String(now.values.maxProvisionalRefinements)
-            : '4';
-          return {
-            draft: {
-              ...now.draft,
-              provisionalRules: [...currentRules, { key: nextUnusedProvisionalKey, maxRefinements: defaultCount }],
-            },
+            draft: { ...now.draft, types: restored, fallbackType: nextFallback },
             notice: null,
           };
         });
@@ -2735,7 +2658,7 @@ window.__ModuleLoader__.load({
       );
 
       const form = () => h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
-        staleModule === null ? null : h(StaleHostBanner, { t }),
+        staleModule === null ? null : h(StaleHostBanner, { t, module: staleModule }),
         editable === true ? null : h(ReadOnlyBanner, { t }),
         activeTab === 'format' ? renderFormatTab()
           : activeTab === 'types' ? renderTypesTab()
@@ -3465,7 +3388,7 @@ window.__ModuleLoader__.load({
             'settings.loading': '正在读取设置…',
             'settings.loadFailed': '读取命名设置失败',
             'settings.needsReload': '设置接口不可用：请重启 DSH 使新版插件生效后再试。',
-            'settings.staleHost': '插件代码已更新，但当前进程仍在用旧版本；重启 DSH 后这里的修改才会按新代码生效。',
+            'settings.staleHost': '插件代码已更新（{module}），但当前进程仍在用旧版本；重启 DSH 后这里的修改才会按新代码生效。',
             'settings.editorUnavailable': '当前 profile 无法保存插件配置，可在 cordis.patch.yml 中手动修改。',
             'settings.tab.format': '格式',
             'settings.tab.types': '类型',
@@ -3690,7 +3613,7 @@ window.__ModuleLoader__.load({
             'settings.loading': 'Loading settings…',
             'settings.loadFailed': 'Could not read the naming settings',
             'settings.needsReload': 'The settings route is unavailable: restart DSH so the new plugin version takes effect, then try again.',
-            'settings.staleHost': 'The plugin code on disk is newer than this process; restart DSH so these changes run on the new code.',
+            'settings.staleHost': 'The plugin code on disk is newer than this process ({module}); restart DSH so these changes run on the new code.',
             'settings.editorUnavailable': 'This profile cannot save plugin configuration; edit cordis.patch.yml by hand instead.',
             'settings.tab.format': 'Format',
             'settings.tab.types': 'Types',

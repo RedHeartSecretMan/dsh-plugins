@@ -129,6 +129,7 @@ export async function apply(ctx, rawConfig) {
     template: config.template,
     types: config.types,
     fallbackType: config.fallbackType,
+    fallbackTruncation: config.fallbackTruncation,
     cjkSpacing: config.cjkSpacing,
     topicMaxChars: config.topicMaxChars,
   });

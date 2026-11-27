@@ -273,7 +273,7 @@ useSessions(s => s.byId[id].projectionValues.sessionTitleState)
 
 ```js
 ctx.inject(['commands'], (commandCtx) => {
-  commandCtx.commands.register({ name: 'title', input: { hint: '<status|refresh|pin|auto>' }, handler });
+  commandCtx.commands.register({ name: 'title', input: { hint: 'status · refresh · pin [完整标题]' }, handler });
 });
 ```
 
@@ -326,7 +326,7 @@ export async function applyBackfill(ctx, deps, ids) → { updated, failed }
 
 #### 3.3.4 pin / unpin 正式化
 
-现状 pin 是 `source.kind === 'user'` 的推断，无显式 API。0.2.0 不改 DSH 服务，只把已有语义显式化：在 `title-state.js` 快照里保留 `pinned` 字段，并给出两个正式入口——会话内的 `/title pin` / `/title auto` 命令，以及侧边栏菜单的「固定当前标题」（走 `ctx.sessions.using(id, {}, ref => ref.binding.session.rename(title))`）。文档明确写清「固定 = 用户标题，解除固定 = 显式 refresh」。
+现状 pin 是 `source.kind === 'user'` 的推断，无显式 API。0.2.0 不改 DSH 服务，只把已有语义显式化：在 `title-state.js` 快照里保留 `pinned` 字段，并给出两个正式入口——会话内的 `/title pin [完整标题]` 命令（不带标题即固定当前；0.2.1 起 `auto` 并入 `refresh`），以及侧边栏菜单的「固定当前标题」（走 `ctx.sessions.using(id, {}, ref => ref.binding.session.rename(title))`）。文档明确写清「固定 = 用户标题，解除固定 = 显式 refresh」。
 
 ### 3.4 阶段 2：Client 半边
 

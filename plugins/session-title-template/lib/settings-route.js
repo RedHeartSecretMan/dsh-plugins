@@ -133,6 +133,21 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
   let saving = false;
   const activeRaw = rawConfig ?? {};
 
+  /**
+   * Claim the single save slot, or answer 409 for a concurrent save.
+   *
+   * @param res - Response to answer when another save is running.
+   * @returns Whether this request owns the slot and must clear it in `finally`.
+   */
+  const beginSave = (res) => {
+    if (!saving) {
+      saving = true;
+      return true;
+    }
+    sendJson(res, 409, { code: 'save-in-progress', message: 'Another settings save is still running' });
+    return false;
+  };
+
   const dispose = ctx.webServer.register({
     kind: 'exact',
     auth: 'required',
@@ -190,10 +205,7 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
       const mode = body?.mode === 'yaml' ? 'yaml' : body?.mode === 'reset' ? 'reset' : 'form';
 
       if (mode === 'reset') {
-        if (saving) {
-          sendJson(res, 409, { code: 'save-in-progress', message: 'Another settings save is still running' });
-          return;
-        }
+        if (!beginSave(res)) return;
         // When the editor exposes current layers, avoid an unnecessary reload if already at defaults.
         if (typeof editor.configuration === 'function') {
           try {
@@ -205,7 +217,6 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
             }
           } catch { /* fall through to editor.edit */ }
         }
-        saving = true;
         try {
           let nextRaw = {};
           await editor.edit(entry, (_current, inherited) => {
@@ -236,11 +247,7 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
           sendJson(res, 200, { saved: true, restarted: false, ...snapshotPayload(nextRaw, nextResolved) });
           return;
         }
-        if (saving) {
-          sendJson(res, 409, { code: 'save-in-progress', message: 'Another settings save is still running' });
-          return;
-        }
-        saving = true;
+        if (!beginSave(res)) return;
         try {
           await editor.edit(entry, () => structuredClone(nextRaw));
           sendJson(res, 200, { saved: true, restarted: true, ...snapshotPayload(nextRaw, nextResolved) });
@@ -266,11 +273,7 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
         sendJson(res, 200, { saved: true, restarted: false, ...snapshotPayload(preview, nextResolved) });
         return;
       }
-      if (saving) {
-        sendJson(res, 409, { code: 'save-in-progress', message: 'Another settings save is still running' });
-        return;
-      }
-      saving = true;
+        if (!beginSave(res)) return;
       try {
         let written = preview;
         await editor.edit(entry, (current) => {

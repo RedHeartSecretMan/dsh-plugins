@@ -133,7 +133,7 @@ export function renderTitleStatus(snapshot) {
     rules.push(`  日期来源    会话创建时间 · ${builtin.dateFormat ?? ''}${builtin.dateFormat !== undefined && builtin.timezone !== undefined ? ' · ' : ''}${builtin.timezone ?? ''}`);
   }
   if (Array.isArray(builtin.types) && builtin.types.length > 0) rules.push(`  类型词表    ${builtin.types.join('、')}`);
-  if (builtin.topicMaxChars !== undefined) rules.push(`  主题长度    ${builtin.topicMinChars ?? 0}—${builtin.topicMaxChars} 字宽`);
+  if (builtin.topicMaxChars !== undefined) rules.push(`  主题长度    ${builtin.topicMinChars ?? 0}-${builtin.topicMaxChars} 字宽`);
   if (rules.length > 0) lines.push('内置规则', ...rules);
 
   const count = supplemental.count ?? 0;

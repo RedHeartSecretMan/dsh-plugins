@@ -347,10 +347,10 @@ export function applySettings(raw, changes) {
     } else if (key === 'backfill') {
       const current = isPlainObject(next.backfill) ? next.backfill : {};
       next.backfill = { ...current, enabled: value };
-    } else if (key === 'subagentProvider' || key === 'subagentModel' || key === 'fallbackProvider' || key === 'fallbackModel') {
+    } else if (key === 'subagentProvider' || key === 'subagentModel'
+      || key === 'fallbackProvider' || key === 'fallbackModel'
+      || key === 'provider' || key === 'model') {
       // Handled as pairs after the loop so both halves stay consistent.
-    } else if ((key === 'provider' || key === 'model') && value.trim() === '') {
-      Reflect.deleteProperty(next, key);
     } else {
       next[key] = typeof value === 'string' ? value.trim() : value;
     }
@@ -402,6 +402,9 @@ export function applySettings(raw, changes) {
   }
 
   applyRoutePair(changes, next, {
+    providerKey: 'provider', modelKey: 'model', routeKey: 'provider', flat: true, field: 'provider',
+  });
+  applyRoutePair(changes, next, {
     providerKey: 'subagentProvider', modelKey: 'subagentModel', routeKey: 'subagentRoute', field: 'subagentRoute',
   });
   applyRoutePair(changes, next, {
@@ -430,20 +433,33 @@ export function applySettings(raw, changes) {
  * @param keys.modelKey - Form field carrying the model.
  * @param keys.routeKey - Raw config key holding `{ provider, model }`.
  * @param keys.field - Config field named in a validation message.
+ * @param keys.flat - Write the pair as two top-level keys instead of one route object.
  */
-function applyRoutePair(changes, next, { providerKey, modelKey, routeKey, field }) {
+function applyRoutePair(changes, next, { providerKey, modelKey, routeKey, field, flat = false }) {
   if (!(providerKey in changes) && !(modelKey in changes)) return;
-  const current = isPlainObject(next[routeKey]) ? next[routeKey] : {};
+  const current = flat
+    ? { provider: next.provider, model: next.model }
+    : (isPlainObject(next[routeKey]) ? next[routeKey] : {});
   const provider = (providerKey in changes ? changes[providerKey] : String(current.provider ?? '')).trim();
   const model = (modelKey in changes ? changes[modelKey] : String(current.model ?? '')).trim();
   if (provider === '' && model === '') {
-    Reflect.deleteProperty(next, routeKey);
+    if (flat) {
+      Reflect.deleteProperty(next, 'provider');
+      Reflect.deleteProperty(next, 'model');
+    } else {
+      Reflect.deleteProperty(next, routeKey);
+    }
     return;
   }
   if (provider === '' || model === '') {
     throw rejected(`config.${field}.provider and model must be supplied together`);
   }
-  next[routeKey] = { provider, model };
+  if (flat) {
+    next.provider = provider;
+    next.model = model;
+  } else {
+    next[routeKey] = { provider, model };
+  }
 }
 
 /**

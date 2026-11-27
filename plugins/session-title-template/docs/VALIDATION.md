@@ -10,6 +10,7 @@
 | 标题格式 | 日期取自会话创建时间；已有标题要求规范格式和正确日期；模型输出可宽容处理括号、Markdown 包裹和省略日期 |
 | 自动刷新 | 不是每轮调用：短确认/继续跳过；显式刷新/重命名、fallback/recovery、非规范标题、provisional 窗口内新实质消息、明确换题、低词面重合与周期审计触发评估；provisional 超过 `maxProvisionalRefinements` 后平滑交回低词面重合与周期审计；同一消息水位不重复评估 |
 | 当前标题稳定性 | currentTitle 始终进入 prompt 与 JSON 输入，带 canonical 标志；模型按稳定性规则原样返回仍准确的标题；仅主任务实质变化时改写；显式 refresh/retitle 优先；同标题返回保留 provenance |
+| 兜底标题 | 无模型时的本地兜底按 `fallbackTruncation` 选择截断方式；历史补写与定向重命名走同一份 `titleOptions`，因此不会退回默认的 `natural` |
 | 模板与字符 | 占位符恰好一次且可辨识；字段重排、后缀和字面美元文本可往返；截断按中文等效字宽与分词/分句边界计算 |
 | 重试与失败归类 | 每轮按顺序遍历全部候选路由，健康备用路由立即接管；解析失败或输出截断不会在同一轮向同一模型重复请求；轮间指数退避，`retryAttempts`（1–5）与 `retryDelayMs`（0–10000）有界；输入预算不足属确定性失败只试一次；取消立即中止且不写失败日志；失败类别按 Harness 错误码归类（`SESSION_TITLE_TIMEOUT` / `TITLE_TOOL_OUTPUT` / `max-tokens`），不依赖 provider 报错文本 |
 | 子代理命名 | 仅当会话自身 origin 为 subagent 时读取 `subagent/descriptor` 的 label；fork 种子里继承的 descriptor 被忽略；label 按与模型输出相同的规范化规则渲染；label 缺失回落到消息来源 |
@@ -19,7 +20,7 @@
 | owner 鉴权回退 | 请求未带 Peer 参数时（Harness 0.2.2 的 `handler(req, res)` 调用方式）回退到环回信任判定：`127.0.0.1`/`::1` 等文本环回来源被接受，非环回来源仍返回 403；Peer 存在时只按 Peer 判定，回退不参与 |
 | HTTP 状态与刷新路由 | owner 鉴权的 `GET /session-title-template/status`（同时支持活会话与经 `sessionQuery` 只读的冷会话）与 `POST /session-title-template/refresh`（活会话无痕刷新），不向对话流追加命令块，错误分类返回且不泄漏异常正文 |
 | `/title` 命令卡片 | 通过 `conversation.chat.commandview` 以 `title` 为键接管该命令的行渲染：动词片（`status`/`refresh`/`pin`）区分三种操作，成功态保持安静（命令名与动词为弱化色，摘要用行内最强文字色），只有失败把动词填成淡红，生成中整行弱化；无逐行状态图标，折叠行只显示一行摘要（`status` 取当前标题行，其余去掉重复动词的前缀；`请用 /title …` 类用法错误折叠为「用法错误」，完整提示留在展开体），**每个已结算的行都可展开**并在展开区按宿主命令卡样式呈现完整 `text`，复制动作同样写入完整 `text`；运行中的行没有展开区；无 DOM 环境下复制静默失败而不抛错 |
-| Host 陈旧提示 | 插件激活时记录进程启动时刻；settings `GET` 每次请求都比对该时刻与 `index.js`、`lib/**/*.js` 的最新 mtime（1 秒容差），任一新于进程即返回 `staleModule`，设置弹窗顶部提示「插件代码已更新，需要重启 DSH」。只提示，不阻止保存；读目录失败按"未陈旧"处理，不因诊断失败影响激活 |
+| Host 陈旧提示 | 插件激活时记录进程启动时刻；settings `GET` 每次请求都比对该时刻与 `index.js`、`lib/**/*.js` 的最新 mtime（1 秒容差），任一新于进程即返回 `staleModule`，设置弹窗顶部提示「插件代码已更新（<模块路径>），需要重启 DSH」。只提示，不阻止保存；读目录失败按"未陈旧"处理，不因诊断失败影响激活 |
 | `/title` 命令语法 | 空行等价 `status`；未知子命令（含已并入 `refresh` 的 `auto`）与 `status`/`refresh` 的多余参数都返回「请用 /title …」形式的提示；`pin` 不带标题时固定当前标题，带标题时改名并固定，没有标题可固定时提示先 `/title refresh` |
 | 失败诊断 | `title-call-failed` 只记录 `route`、`attempt n/总数`、provider 错误码和本地失败类别；不写标题、提示词、响应或原始错误文本 |
 | 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含 currentTitle anchor、转义和包装；优先保留首条和最新消息 |

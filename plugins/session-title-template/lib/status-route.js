@@ -23,10 +23,6 @@ export const STATUS_ROUTE_PATH = '/session-title-template/status';
 /** Exact authenticated POST path registered on the Host's webServer. */
 export const REFRESH_ROUTE_PATH = '/session-title-template/refresh';
 
-// The JSON envelope helpers live in ./http.js; re-exported here because the
-// settings route used to import them from this module.
-export { sendJson, safeCategory, readJsonBody };
-
 /**
  * Register the owner-only status (GET) and optional silent refresh (POST)
  * routes when `webServer` is present.
