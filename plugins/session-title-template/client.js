@@ -1937,33 +1937,26 @@ window.__ModuleLoader__.load({
           }, glyph(expanded ? CHEVRON_DOWN_PARTS : CHEVRON_RIGHT_PARTS, 12, 1.4)),
           h('span', {
             style: {
-              flex: 'none', fontWeight: 400,
-              color: state === 'running' ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-label-primary)',
+              flex: 'none', fontWeight: 400, color: 'var(--dsw-alias-label-tertiary)',
             },
           }, 'title'),
           h('span', {
-            style: {
-              flex: 'none', padding: '0 5px', height: 16, borderRadius: 5,
-              display: 'inline-flex', alignItems: 'center',
-              fontSize: 11, lineHeight: '16px', fontWeight: 500,
-              // The verb chip carries the outcome as a tinted badge, the way the
-              // status dialog's own badges do; the row's text stays uncoloured.
-              background: state === 'ok'
-                ? 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent)'
-                : state === 'error'
-                  ? 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent)'
-                  : 'var(--dsw-alias-markdown-inline-code)',
-              border: `1px solid ${state === 'ok'
-                ? 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 30%, transparent)'
-                : state === 'error'
-                  ? 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 32%, transparent)'
-                  : 'var(--dsw-alias-border-l1)'}`,
-              color: state === 'ok'
-                ? 'var(--dsw-alias-state-success-primary)'
-                : state === 'error'
-                  ? 'var(--dsw-alias-state-error-primary)'
-                  : 'var(--dsw-alias-label-secondary)',
-            },
+            style: state === 'error'
+              // Only the exception is filled: a failed invocation needs to catch
+              // the eye, while a successful one is the norm and stays quiet.
+              ? {
+                flex: 'none', padding: '0 5px', height: 16, borderRadius: 5,
+                display: 'inline-flex', alignItems: 'center',
+                fontSize: 11, lineHeight: '16px', fontWeight: 500,
+                background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 30%, transparent)',
+                color: 'var(--dsw-alias-state-error-primary)',
+              }
+              : {
+                flex: 'none', padding: '0 1px',
+                fontSize: 11.5, lineHeight: '16px', fontWeight: 500,
+                color: state === 'running' ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-label-secondary)',
+              },
           }, verb),
           h('span', {
             'aria-hidden': true,
@@ -1976,7 +1969,9 @@ window.__ModuleLoader__.load({
             title: summary,
             style: {
               flex: '1 1 auto', minWidth: 0,
-              color: state === 'running' ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-label-secondary)',
+              // The summary is the content of the row, so it holds the strongest
+              // text colour; the command name and verb stay muted around it.
+              color: state === 'running' ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-label-primary)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             },
           }, summary),
@@ -1991,7 +1986,7 @@ window.__ModuleLoader__.load({
               background: 'transparent',
               color: copied ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-label-tertiary)',
               cursor: 'pointer',
-              opacity: hovered || copied ? 1 : 0.55,
+              opacity: hovered || copied ? 1 : 0.45,
               transition: 'opacity 120ms ease, color 120ms ease',
             },
           }, glyph(copied ? CHECK_PARTS : COPY_PARTS, 13, 1.4)) : null,
