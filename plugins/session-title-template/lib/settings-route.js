@@ -206,18 +206,18 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
 
       if (mode === 'reset') {
         if (!beginSave(res)) return;
-        // When the editor exposes current layers, avoid an unnecessary reload if already at defaults.
-        if (typeof editor.configuration === 'function') {
-          try {
-            const layer = editor.configuration().find(item => item.entry === entry);
-            if (layer !== undefined && isDeepStrictEqual(activeRaw, layer.inherited ?? {})) {
-              const resolved = resolveConfig(layer.inherited ?? {});
-              sendJson(res, 200, { saved: true, restarted: false, ...snapshotPayload(layer.inherited ?? {}, resolved) });
-              return;
-            }
-          } catch { /* fall through to editor.edit */ }
-        }
         try {
+          // When the editor exposes current layers, avoid an unnecessary reload if already at defaults.
+          if (typeof editor.configuration === 'function') {
+            try {
+              const layer = editor.configuration().find(item => item.entry === entry);
+              if (layer !== undefined && isDeepStrictEqual(activeRaw, layer.inherited ?? {})) {
+                const resolved = resolveConfig(layer.inherited ?? {});
+                sendJson(res, 200, { saved: true, restarted: false, ...snapshotPayload(layer.inherited ?? {}, resolved) });
+                return;
+              }
+            } catch { /* fall through to editor.edit */ }
+          }
           let nextRaw = {};
           await editor.edit(entry, (_current, inherited) => {
             nextRaw = structuredClone(inherited ?? {});
@@ -273,7 +273,7 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
         sendJson(res, 200, { saved: true, restarted: false, ...snapshotPayload(preview, nextResolved) });
         return;
       }
-        if (!beginSave(res)) return;
+      if (!beginSave(res)) return;
       try {
         let written = preview;
         await editor.edit(entry, (current) => {

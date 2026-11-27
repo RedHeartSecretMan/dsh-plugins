@@ -8,13 +8,9 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3`, `0.2.2-rc.1`, `0.2.2-rc.2` and `0.2.3-alpha.2` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-title-template`, version `0.2.1`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-title-template`, currently prepared for `0.2.1` (unreleased candidate on `main`; the latest tagged release is `0.2.0` on [GitHub Releases](https://github.com/RedHeartSecretMan/dsh-plugins/releases)).
 
-```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz
-```
-
-To install from a checkout instead:
+While `0.2.1` is not yet tagged, install from a checkout instead:
 
 ```sh
 git clone https://github.com/RedHeartSecretMan/dsh-plugins.git
@@ -22,6 +18,12 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 ```
 
 Use `<clone>/plugins/session-title-template` as the plugin manager's target, not the repository root.
+
+Once `session-title-template-v0.2.1` is tagged and its [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz) is published, it can also be installed through `install_bundle` or the CLI:
+
+```sh
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz
+```
 
 The bundle disables the shipped `session-title-llm`. Disable other title providers too: the service accepts one provider. Follow the Host's application outcome; a restart-required result means fully quit and reopen Desktop.
 

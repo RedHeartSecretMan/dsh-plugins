@@ -451,7 +451,7 @@ check('viewing status opens a structured shell.overlay modal instead of dumping 
     '  标题格式    [{date}][{type}] {topic}',
     '  日期来源    会话创建时间 · MMDD · Asia/Shanghai',
     '  类型词表    功能、修复、文档',
-    '  主题长度    8—20 字宽',
+    '  主题长度    8-20 字宽',
     '补充规则（1）',
     '  ~/.dsh/AGENTS.md',
     '当前标题',
@@ -744,18 +744,21 @@ const sampleTypes = [
 const settingsValues = {
   template: '[{date}][{type}] {topic}',
   language: 'zh',
+  uiLanguage: 'auto',
   timezone: 'Asia/Shanghai',
   dateFormat: 'MMDD',
   cjkSpacing: true,
   topicMinChars: 8,
   topicMaxChars: 20,
   fallbackType: '探索',
+  fallbackTruncation: 'natural',
   types: sampleTypes,
   maxProvisionalRefinements: 4,
   provider: '',
   model: '',
   subagentProvider: '',
   subagentModel: '',
+  subagentDelegationLabel: true,
   fallbackProvider: '',
   fallbackModel: '',
   roleProbe: true,
@@ -936,6 +939,14 @@ check('types tab keeps provisional status and refinement count inside each vocab
   if (findElement(collapsed, node => node.type === 'input' && node.props['aria-label'] === 'settings.types.keyAria:{"index":1}').length !== 0) {
     throw new Error('vocabulary table should start collapsed');
   }
+  const truncationSelect = findElement(collapsed, node => node.type === 'select' && node.props['aria-label'] === 'settings.fallbackTruncation')[0];
+  if (truncationSelect === undefined) throw new Error('types tab must render fallbackTruncation selector');
+  truncationSelect.props.onChange({ target: { value: 'hard' } });
+  const typesTab = findElement(render(), node => node.props?.role === 'tab' && textOf(node).includes('settings.tab.types'))[0];
+  const dirtyDot = findElement(typesTab, node => node.type === 'span' && node.props?.['aria-hidden'] === true);
+  if (dirtyDot.length !== 1) throw new Error('changing fallbackTruncation must mark the types tab dirty');
+  findElement(render(), node => node.type === 'select' && node.props['aria-label'] === 'settings.fallbackTruncation')[0]
+    .props.onChange({ target: { value: 'natural' } });
   const toggle = findElement(collapsed, node => node.type === 'button' && node.props['aria-expanded'] === false && node.props['aria-label'] === 'settings.group.types')[0];
   if (toggle === undefined) throw new Error('vocabulary card should expose one collapsed toggle');
   toggle.props.onClick();

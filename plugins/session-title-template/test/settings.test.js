@@ -178,9 +178,9 @@ test('unknown, mistyped and invalid values are rejected with the invalid-setting
   reject({ timezone: 'Mars/Base' }, /time zone/u);
   reject({ dateFormat: 'YYYY' }, /MM and DD/u);
   reject({ topicMinChars: 40 }, /topicMaxChars/u);
-  reject({ provider: 'only' }, /together/u);
-  reject({ subagentProvider: 'only', subagentModel: '' }, /together/u);
-  reject({ fallbackProvider: 'only', fallbackModel: '' }, /together/u);
+  reject({ provider: 'only' }, /config\.provider and config\.model must be supplied together/u);
+  reject({ subagentProvider: 'only', subagentModel: '' }, /config\.subagentRoute\.provider and model must be supplied together/u);
+  reject({ fallbackProvider: 'only', fallbackModel: '' }, /config\.fallbackRoute\.provider and model must be supplied together/u);
   reject({ fallbackType: '未知' }, /configured types/u);
   reject({ types: [{ key: 'only', hint: '' }] }, /at least two/u);
   reject({ types: [{ key: 'a', hint: '', provisional: false, maxRefinements: 3 }, { key: 'b', hint: '' }], fallbackType: 'a' }, /provisional/u);
@@ -465,4 +465,28 @@ test('a second save while one is running is refused instead of queued', async ()
   release();
   await pending;
   assert.equal(first.statusCode, 200);
+});
+
+test('resetting when already at inherited defaults skips the write and releases the save lock', async () => {
+  let writes = 0;
+  const entry = { options: { id: 'session-title-template' } };
+  const raw = { language: 'zh' };
+  const editor = {
+    configuration: () => [{ entry, inherited: { language: 'zh' } }],
+    async edit() { writes += 1; },
+  };
+  const { handler } = setup({ raw, editor, entry });
+
+  const first = createMockResponse();
+  await handler({ method: 'POST', headers: json, body: { mode: 'reset' } }, first, owner);
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.json().saved, true);
+  assert.equal(first.json().restarted, false);
+  assert.equal(writes, 0);
+
+  const followUp = createMockResponse();
+  await handler({ method: 'POST', headers: json, body: { changes: { language: 'en' } } }, followUp, owner);
+  assert.equal(followUp.statusCode, 200, 'no-op reset must release the save lock before returning');
+  assert.equal(followUp.json().restarted, true);
+  assert.equal(writes, 1);
 });

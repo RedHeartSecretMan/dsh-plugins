@@ -14,13 +14,9 @@
 
 需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3`、`0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.3-alpha.2` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
-包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.2.1`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-title-template`，当前 `main` 分支为待发布的 `0.2.1` 候选版本（尚未打 tag 发布；最近已发布的版本为 [GitHub Releases](https://github.com/RedHeartSecretMan/dsh-plugins/releases) 上的 `0.2.0`）。
 
-```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz
-```
-
-也可以从仓库目录安装：
+`0.2.1` 尚未发布压缩包前，请从仓库目录安装：
 
 ```sh
 git clone https://github.com/RedHeartSecretMan/dsh-plugins.git
@@ -28,6 +24,12 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 ```
 
 插件管理的安装目标为 `<clone>/plugins/session-title-template`，不要选择仓库根目录。
+
+待打上 `session-title-template-v0.2.1` tag 并构建出 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz) 后，也可在插件管理中通过 `install_bundle` 或 CLI 安装：
+
+```sh
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz
+```
 
 安装会禁用内置 `session-title-llm`。标题服务同时只接受一个提供方；其他第三方标题提供方也应先停用。是否热生效取决于 Host 的重载能力，安装结果要求重启时请完整退出并重新打开桌面版。
 

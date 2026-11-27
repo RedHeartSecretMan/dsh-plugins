@@ -1077,6 +1077,7 @@ window.__ModuleLoader__.load({
       dateFormat: 'format',
       timezone: 'format',
       fallbackType: 'types',
+      fallbackTruncation: 'types',
       maxProvisionalRefinements: 'types',
       types: 'types',
       provider: 'models',
@@ -1470,7 +1471,7 @@ window.__ModuleLoader__.load({
         const firstInvalid = invalidFields[0];
         const targetTab = SETTINGS_FIELD_TAB[firstInvalid] ?? dialog.activeTab;
         const needsAdvanced = SETTINGS_ADVANCED_FIELDS.includes(firstInvalid) || firstInvalid === 'uiLanguage';
-          store.set({
+        store.set({
           ...dialog,
           activeTab: targetTab,
           typesOpen: dialog.typesOpen === true,
@@ -1515,10 +1516,10 @@ window.__ModuleLoader__.load({
           return;
         }
         const errMessage = String(payload?.message ?? '');
-        const extra = payload?.code === 'invalid-settings' && /config\.types/u.test(errMessage)
+        const extra = payload?.code === 'invalid-settings' && /config\.(?:types|maxProvisionalRefinements)/u.test(errMessage)
           ? { activeTab: 'types', typesOpen: true }
-          : payload?.code === 'invalid-settings' && /config\.maxProvisionalRefinements/u.test(errMessage)
-            ? { activeTab: 'types', typesOpen: true }
+          : payload?.code === 'invalid-settings' && /config\.(?:fallbackType|fallbackTruncation)/u.test(errMessage)
+            ? { activeTab: 'types' }
             : payload?.code === 'invalid-settings' && /config\.(?:provider|model|subagentRoute|fallbackRoute)/u.test(errMessage)
               ? { activeTab: 'models' }
               : payload?.code === 'invalid-settings' && /config\.(?:maxInputBytes|maxOutputTokens|timeoutMs|retryAttempts|retryDelayMs|uiLanguage)/u.test(errMessage)

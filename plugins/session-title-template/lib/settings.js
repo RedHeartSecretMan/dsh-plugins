@@ -402,7 +402,7 @@ export function applySettings(raw, changes) {
   }
 
   applyRoutePair(changes, next, {
-    providerKey: 'provider', modelKey: 'model', routeKey: 'provider', flat: true, field: 'provider',
+    providerKey: 'provider', modelKey: 'model', flat: true, field: 'provider',
   });
   applyRoutePair(changes, next, {
     providerKey: 'subagentProvider', modelKey: 'subagentModel', routeKey: 'subagentRoute', field: 'subagentRoute',
@@ -452,7 +452,9 @@ function applyRoutePair(changes, next, { providerKey, modelKey, routeKey, field,
     return;
   }
   if (provider === '' || model === '') {
-    throw rejected(`config.${field}.provider and model must be supplied together`);
+    throw rejected(flat
+      ? 'config.provider and config.model must be supplied together'
+      : `config.${field}.provider and model must be supplied together`);
   }
   if (flat) {
     next.provider = provider;

@@ -1,6 +1,6 @@
 # session-title-template 验证范围与行为边界
 
-当前发布：`0.2.1`。验证环境包括已安装的 DSH `0.2.1-rc.3`、`0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.3-alpha.2` 及其真实 Cordis、SessionStore、投影和标题服务。当前安装包为 [session-title-template 0.2.1](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz)。
+当前候选版本：`0.2.1`（尚未打 tag 发布；上一个已发布版本为 `0.2.0`）。验证环境包括已安装的 DSH `0.2.1-rc.3`、`0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.3-alpha.2` 及其真实 Cordis、SessionStore、投影和标题服务。发版后的目标安装包为 [session-title-template 0.2.1](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz)（打 `session-title-template-v0.2.1` tag 后由发布工作流生成；发布前请从本地仓库目录安装）。
 
 ## 已验证的契约
 
@@ -36,9 +36,9 @@
 | 状态与卸载 | 结构化诊断写入 `diagnostics.jsonl`（有界、逐字段截断）； 按 profile 隔离；原子写入和有界锁等待；错误后队列可恢复；卸载取消定时器并等待维护退出 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-title-template`，插件 id 与包名一致；显示名称由 locale 提供为“会话标题模板”；发布包包含全部运行资源 |
 
-单元与回归测试共 376 项，另加 32 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、只读状态与无痕刷新路由、命名设置与零依赖 YAML 读写、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
+单元与回归测试共 377 项，另加 32 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、只读状态与无痕刷新路由、命名设置与零依赖 YAML 读写、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
 
-`scripts/verify-client.mjs` 按 Web carrier 的方式加载 `client.js`：用 React 替身执行模块注册，然后检查插件导出的 `inject`、行尾/悬浮/弹窗与插件详情配置（`plugins.bundle.config`）四个 UI slot 与五个自有图标 key 的注册、原生 `contextMenus` 贡献（含 `observe` 响应订阅、`target: 'session'` 与「会话标题 ›」四子项结构）、中英词典键集一致、固定标题走 Session 引用而非不存在的 `sessions.rename` 且在已固定或尚无标题时禁用、固定当前与行尾已固定图标共用四角框定星芒图标而非复用置顶会话的图钉、悬浮窗使用 hovercard 语义色 token 且空状态不渲染、点击查看状态优先走只读 HTTP 路由直接消费结构化 `snapshot`（支持冷会话与英文全量本地化，结构化错误不误回落，切页或关闭时中止在飞请求，回落文本解析器不误判以 `来源：` 开头的标题）、点击自动生成优先走无痕 `POST` 刷新路由并直接提示详细结果与错误、四 Tab 命名设置弹窗（实时预览、格式/类型词表/主与兜底模型选择/行为与折叠高级参数、仅修改时展示的底栏重载提醒、非法数值与 Host 校验提示、只读与路由缺失处理、插件重启丢回复时的深度相等回读确认），以及插件详情页 YAML 编辑器（加载、展开完整配置、语法错误提示、保存、二次确认恢复默认与只读状态）。它验证形状与注册，不验证视觉呈现；真实 GUI 渲染仍需在本机核对。
+`scripts/verify-client.mjs` 按 Web carrier 的方式加载 `client.js`：用 React 替身执行模块注册，然后检查插件导出的 `inject`、行尾/悬浮/弹窗/插件详情配置（`plugins.bundle.config`）与命令视图（`conversation.chat.commandview`）五类 UI slot 与五个自有图标 key 的注册、原生 `contextMenus` 贡献（含 `observe` 响应订阅、`target: 'session'` 与「会话标题 ›」四子项结构）、中英词典键集一致、固定标题走 Session 引用而非不存在的 `sessions.rename` 且在已固定或尚无标题时禁用、固定当前与行尾已固定图标共用四角框定星芒图标而非复用置顶会话的图钉、悬浮窗使用 hovercard 语义色 token 且空状态不渲染、点击查看状态优先走只读 HTTP 路由直接消费结构化 `snapshot`（支持冷会话与英文全量本地化，结构化错误不误回落，切页或关闭时中止在飞请求，回落文本解析器不误判以 `来源：` 开头的标题）、点击自动生成优先走无痕 `POST` 刷新路由并直接提示详细结果与错误、四 Tab 命名设置弹窗（实时预览、格式/类型词表/主与兜底模型选择/行为与折叠高级参数、仅修改时展示的底栏重载提醒、非法数值与 Host 校验提示、只读与路由缺失处理、插件重启丢回复时的深度相等回读确认），以及插件详情页 YAML 编辑器（加载、展开完整配置、语法错误提示、保存、二次确认恢复默认与只读状态）。它验证形状与注册，不验证视觉呈现；真实 GUI 渲染仍需在本机核对。
 
 `scripts/verify-runtime.mjs` 进一步接入实际安装的 DSH 服务，核对被接受的标题、provider 来源、辅助请求事件和消息来源标记、AGENTS 补充指导与命名协调、定稿保留、手动标题以及卸载。该契约检查使用 LLM 适配器替身，不验证外部模型的实时网络、凭据或配额。使用正式 profile resolver 加载自包含的 linked package，不依赖未声明的 Harness SDK peer。使用真实工具注册器、标题服务与文件 durability listener 检查显式刷新、当前会话改名、取消在飞生成、flush/read-back 和卸载；该 listener 不是生产 writer，未验证其重启恢复。
 

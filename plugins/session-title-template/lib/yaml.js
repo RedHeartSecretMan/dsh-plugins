@@ -8,6 +8,9 @@
  * comments) while rejecting unsupported exotic YAML features (anchors, aliases,
  * tags, multi-document streams, tab indentation) with line-numbered errors.
  *
+ * Kept dependency-free by design: profile-installed DSH bundles ship without a
+ * `node_modules` directory, so external YAML parsers cannot be resolved here.
+ *
  * @module session-title-template/yaml
  */
 

@@ -199,8 +199,8 @@ function fitWholeUnits(units, limit) {
 }
 
 /**
- * Truncate a topic to a CJK-equivalent width budget without splitting words and
- * without leaving an unfinished trailing clause.
+ * Truncate a topic strictly at the last whole token within a CJK-equivalent
+ * width budget, without sentence or clause backtracking.
  *
  * A token is never split merely to fill the budget; the only split is a single
  * token that by itself exceeds the whole budget, where no whole token can fit.
