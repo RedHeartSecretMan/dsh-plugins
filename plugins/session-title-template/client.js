@@ -1946,9 +1946,23 @@ window.__ModuleLoader__.load({
               flex: 'none', padding: '0 5px', height: 16, borderRadius: 5,
               display: 'inline-flex', alignItems: 'center',
               fontSize: 11, lineHeight: '16px', fontWeight: 500,
-              background: 'var(--dsw-alias-markdown-inline-code)',
-              border: '1px solid var(--dsw-alias-border-l1)',
-              color: state === 'error' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)',
+              // The verb chip carries the outcome as a tinted badge, the way the
+              // status dialog's own badges do; the row's text stays uncoloured.
+              background: state === 'ok'
+                ? 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent)'
+                : state === 'error'
+                  ? 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent)'
+                  : 'var(--dsw-alias-markdown-inline-code)',
+              border: `1px solid ${state === 'ok'
+                ? 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 30%, transparent)'
+                : state === 'error'
+                  ? 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 32%, transparent)'
+                  : 'var(--dsw-alias-border-l1)'}`,
+              color: state === 'ok'
+                ? 'var(--dsw-alias-state-success-primary)'
+                : state === 'error'
+                  ? 'var(--dsw-alias-state-error-primary)'
+                  : 'var(--dsw-alias-label-secondary)',
             },
           }, verb),
           h('span', {
@@ -1962,12 +1976,7 @@ window.__ModuleLoader__.load({
             title: summary,
             style: {
               flex: '1 1 auto', minWidth: 0,
-              // Colour alone carries the outcome: no per-row state icon.
-              color: state === 'error'
-                ? 'var(--dsw-alias-state-error-primary)'
-                : state === 'ok'
-                  ? 'var(--dsw-alias-state-success-primary)'
-                  : 'var(--dsw-alias-label-tertiary)',
+              color: state === 'running' ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-label-secondary)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             },
           }, summary),
