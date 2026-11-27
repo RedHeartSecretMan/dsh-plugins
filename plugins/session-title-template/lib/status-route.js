@@ -13,6 +13,8 @@
  * @module session-title-template/status-route
  */
 
+import { isOwnerRequest } from './owner-gate.js';
+import { sendJson, safeCategory, readJsonBody } from './http.js';
 import { renderTitleStatus } from './title-command.js';
 
 /** Exact authenticated GET path registered on the Host's webServer. */
@@ -21,43 +23,9 @@ export const STATUS_ROUTE_PATH = '/session-title-template/status';
 /** Exact authenticated POST path registered on the Host's webServer. */
 export const REFRESH_ROUTE_PATH = '/session-title-template/refresh';
 
-/** Body size limit for JSON POST payloads. */
-const MAX_BODY_BYTES = 8 * 1024;
-
-/** Send one non-cacheable JSON response when the socket is still writable. */
-export function sendJson(res, status, body) {
-  if (res.writableEnded || res.destroyed) return;
-  res.statusCode = status;
-  res.setHeader('content-type', 'application/json; charset=utf-8');
-  res.setHeader('cache-control', 'no-store');
-  res.end(JSON.stringify(body));
-}
-
-/** Sanitize an error category so provider messages never leave the Host. */
-export function safeCategory(error) {
-  const category = error?.code ?? error?.name ?? 'Error';
-  return typeof category === 'string' && /^[A-Za-z0-9_.-]+$/u.test(category) ? category : 'Error';
-}
-
-/** Read and parse a bounded JSON request body. */
-export async function readJsonBody(req, maxBytes = MAX_BODY_BYTES) {
-  if (typeof req.body === 'string') {
-    if (Buffer.byteLength(req.body, 'utf8') > maxBytes) return { tooLarge: true };
-    return { value: JSON.parse(req.body) };
-  }
-  if (req.body !== undefined && req.body !== null && typeof req.body === 'object') {
-    return { value: req.body };
-  }
-  const chunks = [];
-  let bytes = 0;
-  for await (const chunk of req) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8');
-    bytes += buf.length;
-    if (bytes > maxBytes) return { tooLarge: true };
-    chunks.push(buf);
-  }
-  return { value: JSON.parse(Buffer.concat(chunks, bytes).toString('utf8')) };
-}
+// The JSON envelope helpers live in ./http.js; re-exported here because the
+// settings route used to import them from this module.
+export { sendJson, safeCategory, readJsonBody };
 
 /**
  * Register the owner-only status (GET) and optional silent refresh (POST)
@@ -74,7 +42,7 @@ export function registerStatusRoute(ctx, { describe, describeCold, refresh, stat
     auth: 'required',
     path: STATUS_ROUTE_PATH,
     async handler(req, res, peer) {
-      if (peer?.principal?.kind !== 'owner') {
+      if (!isOwnerRequest(req, peer)) {
         sendJson(res, 403, { code: 'forbidden', message: 'owner access required' });
         return;
       }
@@ -136,7 +104,7 @@ export function registerStatusRoute(ctx, { describe, describeCold, refresh, stat
     auth: 'required',
     path: REFRESH_ROUTE_PATH,
     async handler(req, res, peer) {
-      if (peer?.principal?.kind !== 'owner') {
+      if (!isOwnerRequest(req, peer)) {
         sendJson(res, 403, { code: 'forbidden', message: 'owner access required' });
         return;
       }

@@ -457,7 +457,7 @@ check('viewing status opens a structured shell.overlay modal instead of dumping 
     '  [1124][修复] 修复登录超时',
     '  来源：自动生成',
     '  状态：未固定',
-    '探针结论：开发者角色正常，该端点能读到对应指令块',
+    '探针结论：开发者角色正常，该端点能读到标题指令块',
   ].join('\n');
   ctx.remote = {
     commands: {
@@ -482,7 +482,7 @@ check('viewing status opens a structured shell.overlay modal instead of dumping 
   const buttons = findElement(dialogs[0], node => node.type === 'button');
   if (buttons.length !== 1) throw new Error(`status dialog should keep one close control, got ${buttons.length}`);
   const text = textOf(tree);
-  for (const expected of ['[{date}][{type}] {topic}', '~/.dsh/AGENTS.md', '[1124][修复] 修复登录超时', '开发者角色正常，该端点能读到对应指令块']) {
+  for (const expected of ['[{date}][{type}] {topic}', '~/.dsh/AGENTS.md', '[1124][修复] 修复登录超时', '开发者角色正常，该端点能读到标题指令块']) {
     if (!text.includes(expected)) throw new Error(`status dialog missed expected content: ${expected}`);
   }
 });
@@ -1105,6 +1105,52 @@ check('a save whose reply is lost to the plugin restart is verified by deep-equa
   findElement(render(), node => node.type === 'button' && textOf(node).includes('settings.save'))[0].props.onClick();
   await tick(1400);
   if (!textOf(render()).includes('settings.saved')) throw new Error('a restart-dropped reply with deep-equal types must count as saved');
+});
+
+check('naming settings aligns control width tiers, vocabulary columns, and modal gutters', async () => {
+  const { row, render, selectTab } = await openSettingsDialog(async () => reply(200, {
+    editable: true, values: settingsValues, options: settingsOptions, yaml: sampleYaml, fullYaml: sampleFullYaml,
+  }));
+  await row.run();
+  const formatTree = render();
+  const dialog = findElement(formatTree, node => node.props?.role === 'dialog')[0];
+  if (dialog?.props?.style?.width !== 'min(620px, 100%)') {
+    throw new Error(`expected 620px settings modal, got ${dialog?.props?.style?.width}`);
+  }
+  const guttered = findElement(dialog, node => node.type === 'div' && node.props?.style?.scrollbarGutter === 'stable');
+  if (guttered.length !== 3) {
+    throw new Error(`expected subHeader, body, and footer to share scrollbarGutter: stable, got ${guttered.length}`);
+  }
+  const reset = findElement(formatTree, node => node.type === 'button' && textOf(node).includes('settings.reset'))[0];
+  const save = findElement(formatTree, node => node.type === 'button' && textOf(node).includes('settings.save'))[0];
+  if (reset?.props?.style?.minWidth !== 68 || save?.props?.style?.minWidth !== 68) {
+    throw new Error(`footer buttons must share 68px minWidth, got ${reset?.props?.style?.minWidth} / ${save?.props?.style?.minWidth}`);
+  }
+
+  selectTab('types');
+  findElement(render(), node => node.type === 'button' && node.props['aria-expanded'] === false && node.props['aria-label'] === 'settings.group.types')[0].props.onClick();
+  const typesTree = render();
+  const tableRows = findElement(typesTree, node => node.type === 'div' && node.props?.style?.gridTemplateColumns === '120px minmax(0, 1fr) 44px 48px 28px');
+  if (tableRows.length !== sampleTypes.length + 1) {
+    throw new Error(`expected header + ${sampleTypes.length} vocabulary rows on unified 120/1fr/44/48/28 grid, got ${tableRows.length}`);
+  }
+  const countInputs = findElement(typesTree, node => node.type === 'input' && String(node.props['aria-label']).includes('settings.types.countAria'));
+  if (countInputs[0]?.props?.placeholder !== '–' || countInputs[2]?.props?.placeholder !== '4') {
+    throw new Error(`disabled rounds should show en-dash placeholder while active rows show 4, got ${countInputs[0]?.props?.placeholder} / ${countInputs[2]?.props?.placeholder}`);
+  }
+  const addBtn = findElement(typesTree, node => node.type === 'button' && textOf(node).includes('settings.types.add'))[0];
+  if (addBtn?.props?.style?.width !== 120 || addBtn?.props?.style?.height !== 28) {
+    throw new Error(`add type button must match 120x28 tier, got ${addBtn?.props?.style?.width}x${addBtn?.props?.style?.height}`);
+  }
+
+  selectTab('behavior');
+  const behaviorTree = render();
+  const uiLangRow = findElement(behaviorTree, node => node.type === 'div'
+    && node.props?.style?.gridTemplateColumns === 'minmax(0, 1fr) minmax(0, 120px)'
+    && findElement(node, child => child.type === 'select' && child.props['aria-label'] === 'settings.uiLanguage').length === 1);
+  if (uiLangRow.length !== 1) {
+    throw new Error('uiLanguage on behavior tab must align with the 120px column tier');
+  }
 });
 
 check('plugin detail YAML editor loads, expands full config, validates syntax, saves and resets cleanly', async () => {

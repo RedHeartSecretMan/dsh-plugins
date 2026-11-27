@@ -61,7 +61,7 @@
 |---|---|
 | 自建跨进程通道（文件轮询） | 上一版方案的兜底，现已被框架已有的投影 + 命令两条通路取代，不需要 |
 | 引入 `@Remote` / typert 依赖 | 当前安装形态下 asar 内包解析不到（实测 `ERR_MODULE_NOT_FOUND`）；且本方案不需要新增 Remote |
-| 自建 HTTP 路由（`ctx.webServer.register`） | 可行且无需 asar 依赖，但要自做认证与 Host 校验；投影 + 命令已够，不引入第二套安全面 |
+| 自建 HTTP 路由（`ctx.webServer.register`） | 0.2.0 曾以"投影 + 命令已够"为由不引入；0.2.1 因需要在**不写对话**的前提下读冷会话与保存配置而引入，代价是自做认证：`lib/owner-gate.js` 是唯一准入判定。Peer 存在时只信 Peer；Peer 缺席时（Harness 0.2.2 以 `handler(req, res)` 调用）回退到环回信任判定（`127.0.0.1`、`::1` 等文本环回形式才放行），非环回来源一律 403。这条回退由 `test/owner-gate.test.js` 覆盖，新增路由必须复用它而不是另写判定 |
 | 改 DSH 核心适配器 | 超出插件边界 |
 | 自动写用户 profile | 违反 DSH 配置契约 |
 | 探针失败自动切换路由 | 探针只观测 |
@@ -88,7 +88,7 @@
 
 ```text
 @redheartsecretman/session-title-template@0.2.0
-├── index.js              Host 装配：只做接线，不含决策
+├── index.js              Host 装配：只做接线，不含决策（冷会话路由经 `resolveColdRoute` 复用 `lib/run.js` 的优先级）
 ├── client.js             Client：菜单四项 + 行尾图标 + 悬停明细
 ├── lib/
 │   ├── title/            ← 由 787 行 title.js 拆成三块
@@ -182,7 +182,7 @@ async generate(request) {
 | `lib/title/format.js` | `formatDate`(37)、`compileTitlePattern`(153)、`canonicalType`(204)、`renderTitle`(217)、`parseModelTitle`(453)、`isFormattedTitle`(481)、`isSettledTitle`(495)、`buildFallbackTitle`(507) | `title-runtime.js`、`backfill.js` |
 | `lib/title/prompt.js` | `describeType`(523)、`titleAnchor`(539)、`stabilityLines`(558)、`buildSystemPrompt`(587)、`frameMessages`(707)、`selectContextMessages`(728) | `title-runtime.js` |
 
-保留 `lib/title.js` 作为 re-export 垫片一个版本，`0.2.1` 删除。这样 `test/title.test.js`（67 例）可以在阶段 0 不动。
+保留 `lib/title.js` 作为 re-export 垫片，让 `test/title.test.js`（67 例）在拆分当次不动。**实际结果（0.2.1）**：垫片保留为对外门面而非过渡物——它已不再只是转发，`provisionalRefinementLimit` 这类共享判定按需下沉到三块之上，新增消费者继续从 `lib/title.js` 取用，`title-plan.js` 也是这么用的。若要删除垫片，得先把这些共享判定放进 `title/` 下的明确归属，再改所有 import；在那之前承诺"0.2.1 删除"是错的。
 
 #### 3.2.3 诊断记录：补 `sessionId`，保持两个 sink 分工
 

@@ -130,7 +130,7 @@ export async function applyBackfill(ctx, { config, state, titleOptions, activeRe
       const { options } = result;
       let session = ctx.sessions.get(id);
       if (!session) {
-        const route = config.backfill.fallbackRoute;
+        const route = config.fallbackRoute;
         handle = await agents.resume({ resumeSessionId: id, ...(route ? { agentOptions: route } : {}) });
         session = handle.agent.session;
       }

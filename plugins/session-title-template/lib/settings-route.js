@@ -12,6 +12,7 @@
 
 import { isDeepStrictEqual } from 'node:util';
 import { resolveConfig } from './config.js';
+import { isOwnerRequest } from './owner-gate.js';
 import {
   applySettings,
   applyYamlConfig,
@@ -20,7 +21,7 @@ import {
   settingsOptions,
   settingsValues,
 } from './settings.js';
-import { readJsonBody, safeCategory, sendJson } from './status-route.js';
+import { readJsonBody, safeCategory, sendJson } from './http.js';
 
 /** Exact authenticated path serving both the GET and POST verbs. */
 export const SETTINGS_ROUTE_PATH = '/session-title-template/settings';
@@ -92,6 +93,33 @@ function snapshotPayload(raw, resolved) {
 }
 
 /**
+ * Report one failed editor write in the shape every save mode shares.
+ *
+ * A higher patch layer wins over this row, which the editor reports as
+ * "overridden by …"; that is a 409 with its own code so the form explains the
+ * layer instead of showing a generic failure. Everything else is a 500 whose
+ * message names the mode that failed and never carries the raw exception text.
+ *
+ * @param res - Response to answer.
+ * @param error - Error thrown by `editor.edit`.
+ * @param state - Diagnostic state store, when the route has one.
+ * @param message - Builds the 500 message from the safe category.
+ */
+function respondSaveFailure(res, error, state, message) {
+  const overridden = /overridden by/u.test(String(error?.message ?? ''));
+  const safe = safeCategory(error);
+  state?.record?.({ kind: 'settings-save-failed', category: overridden ? 'config-overridden' : safe });
+  if (overridden) {
+    sendJson(res, 409, {
+      code: 'config-overridden',
+      message: 'A home patch or command-line overlay overrides this plugin configuration',
+    });
+    return;
+  }
+  sendJson(res, 500, { code: 'save-failed', category: safe, message: message(safe) });
+}
+
+/**
  * Register the settings route when `webServer` is present.
  *
  * @param ctx - Cordis context providing `webServer` and `effect`.
@@ -109,7 +137,7 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
     auth: 'required',
     path: SETTINGS_ROUTE_PATH,
     async handler(req, res, peer) {
-      if (peer?.principal?.kind !== 'owner') {
+      if (!isOwnerRequest(req, peer)) {
         sendJson(res, 403, { code: 'forbidden', message: 'owner access required' });
         return;
       }
@@ -181,12 +209,7 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
           const resolved = resolveConfig(nextRaw);
           sendJson(res, 200, { saved: true, restarted: true, ...snapshotPayload(nextRaw, resolved) });
         } catch (error) {
-          const overridden = /overridden by/u.test(String(error?.message ?? ''));
-          const safe = safeCategory(error);
-          state?.record?.({ kind: 'settings-save-failed', category: overridden ? 'config-overridden' : safe });
-          sendJson(res, overridden ? 409 : 500, overridden
-            ? { code: 'config-overridden', message: 'A home patch or command-line overlay overrides this plugin configuration' }
-            : { code: 'save-failed', category: safe, message: `Failed to reset settings (${safe})` });
+          respondSaveFailure(res, error, state, safe => `Failed to reset settings (${safe})`);
         } finally {
           saving = false;
         }
@@ -216,12 +239,7 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
           await editor.edit(entry, () => structuredClone(nextRaw));
           sendJson(res, 200, { saved: true, restarted: true, ...snapshotPayload(nextRaw, nextResolved) });
         } catch (error) {
-          const overridden = /overridden by/u.test(String(error?.message ?? ''));
-          const safe = safeCategory(error);
-          state?.record?.({ kind: 'settings-save-failed', category: overridden ? 'config-overridden' : safe });
-          sendJson(res, overridden ? 409 : 500, overridden
-            ? { code: 'config-overridden', message: 'A home patch or command-line overlay overrides this plugin configuration' }
-            : { code: 'save-failed', category: safe, message: `Failed to save settings (${safe})` });
+          respondSaveFailure(res, error, state, safe => `Failed to save settings (${safe})`);
         } finally {
           saving = false;
         }
@@ -260,12 +278,7 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
           sendJson(res, 400, { code: 'invalid-settings', message: String(error?.message ?? 'Invalid settings') });
           return;
         }
-        const overridden = /overridden by/u.test(String(error?.message ?? ''));
-        const safe = safeCategory(error);
-        state?.record?.({ kind: 'settings-save-failed', category: overridden ? 'config-overridden' : safe });
-        sendJson(res, overridden ? 409 : 500, overridden
-          ? { code: 'config-overridden', message: 'A home patch or command-line overlay overrides this plugin configuration' }
-          : { code: 'save-failed', category: safe, message: `Failed to save settings (${safe})` });
+        respondSaveFailure(res, error, state, safe => `Failed to save settings (${safe})`);
       } finally {
         saving = false;
       }

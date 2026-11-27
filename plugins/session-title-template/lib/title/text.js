@@ -177,6 +177,28 @@ function sliceByWeight(value, limit) {
 }
 
 /**
+ * Keep the whole units that fit the budget, stopping at the first one that does not.
+ *
+ * Shared by both truncation modes; each mode decides what to do with the
+ * leftover: strict mode stops there, natural mode may replace the tail.
+ *
+ * @param units - Tokenized topic units.
+ * @param limit - Maximum CJK-equivalent width.
+ * @returns The kept prefix and the index of the unit that did not fit.
+ */
+function fitWholeUnits(units, limit) {
+  const kept = [];
+  let used = 0;
+  for (let index = 0; index < units.length; index += 1) {
+    const unit = units[index];
+    if (used + unit.weight > limit) return { kept, stopIndex: index };
+    kept.push(unit);
+    used += unit.weight;
+  }
+  return { kept, stopIndex: units.length };
+}
+
+/**
  * Truncate a topic to a CJK-equivalent width budget without splitting words and
  * without leaving an unfinished trailing clause.
  *
@@ -191,18 +213,11 @@ export function hardTruncateTopic(value, limit) {
   if (!value || !(limit > 0)) return value;
   const units = tokenizeTopicUnits(value);
   if (measureUnits(units) <= limit) return value;
-  const kept = [];
-  let used = 0;
-  for (const unit of units) {
-    if (used + unit.weight > limit) {
-      if (kept.length === 0 && unit.weight > 0) {
-        const partial = sliceByWeight(unit.text, limit);
-        if (partial) kept.push({ text: partial, weight: measureTopicWidth(partial) });
-      }
-      break;
-    }
-    kept.push(unit);
-    used += unit.weight;
+  const { kept, stopIndex } = fitWholeUnits(units, limit);
+  if (kept.length === 0) {
+    const first = units[stopIndex];
+    const partial = first === undefined || first.weight <= 0 ? "" : sliceByWeight(first.text, limit);
+    if (partial) kept.push({ text: partial, weight: measureTopicWidth(partial) });
   }
   return trimTrailingWhiteSpace(kept).map((unit) => unit.text).join('').trim();
 }
@@ -212,18 +227,7 @@ export function truncateTopic(value, limit) {
   const units = tokenizeTopicUnits(value);
   if (measureUnits(units) <= limit) return value;
 
-  const kept = [];
-  let used = 0;
-  let stopIndex = units.length;
-  for (let index = 0; index < units.length; index += 1) {
-    const unit = units[index];
-    if (used + unit.weight > limit) {
-      stopIndex = index;
-      break;
-    }
-    kept.push(unit);
-    used += unit.weight;
-  }
+  const { kept, stopIndex } = fitWholeUnits(units, limit);
 
   const minKeep = Math.min(2, limit);
   const lastKept = trimTrailingWhiteSpace(kept).at(-1);

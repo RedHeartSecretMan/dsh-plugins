@@ -113,12 +113,14 @@ export function defaultTypeEntries() {
 export function namingPresets(defaultLimit = DEFAULTS.maxProvisionalRefinements) {
   return {
     zh: {
+      template: NAMING_PRESETS.zh.template,
       language: NAMING_PRESETS.zh.language,
       cjkSpacing: NAMING_PRESETS.zh.cjkSpacing,
       fallbackType: NAMING_PRESETS.zh.fallbackType,
       types: formTypeEntries(NAMING_PRESETS.zh.types, defaultLimit),
     },
     en: {
+      template: NAMING_PRESETS.en.template,
       language: NAMING_PRESETS.en.language,
       cjkSpacing: NAMING_PRESETS.en.cjkSpacing,
       fallbackType: NAMING_PRESETS.en.fallbackType,
@@ -152,8 +154,8 @@ export function settingsValues(config) {
     subagentProvider: config.subagentRoute?.provider ?? '',
     subagentModel: config.subagentRoute?.model ?? '',
     subagentDelegationLabel: config.subagentDelegationLabel,
-    fallbackProvider: config.backfill.fallbackRoute?.provider ?? '',
-    fallbackModel: config.backfill.fallbackRoute?.model ?? '',
+    fallbackProvider: config.fallbackRoute?.provider ?? '',
+    fallbackModel: config.fallbackRoute?.model ?? '',
     roleProbe: config.roleProbe.enabled,
     agentsInstructions: config.agentsInstructions.enabled,
     agentsInstructionsMaxBytes: config.agentsInstructions.maxBytes,
@@ -250,6 +252,14 @@ export function formatFullConfigYaml(config) {
         },
       }
       : {}),
+    ...(config.fallbackRoute !== undefined
+      ? {
+        fallbackRoute: {
+          provider: config.fallbackRoute.provider,
+          model: config.fallbackRoute.model,
+        },
+      }
+      : {}),
   };
   const afterRoute = {
     subagentDelegationLabel: config.subagentDelegationLabel,
@@ -266,14 +276,6 @@ export function formatFullConfigYaml(config) {
     },
     backfill: {
       enabled: config.backfill.enabled,
-      ...(config.backfill.fallbackRoute !== undefined
-        ? {
-          fallbackRoute: {
-            provider: config.backfill.fallbackRoute.provider,
-            model: config.backfill.fallbackRoute.model,
-          },
-        }
-        : {}),
       ...(config.backfill.retitle.length > 0
         ? {
           retitle: config.backfill.retitle.map(entry => ({
@@ -291,10 +293,10 @@ export function formatFullConfigYaml(config) {
   if (config.subagentRoute === undefined) {
     parts.push('# subagentRoute:\n#   provider: <provider-id>\n#   model: <model-id>');
   }
-  parts.push(formatConfigYaml(afterRoute).trimEnd());
-  if (config.backfill.fallbackRoute === undefined) {
-    parts.push('  # fallbackRoute:\n  #   provider: <provider-id>\n  #   model: <model-id>');
+  if (config.fallbackRoute === undefined) {
+    parts.push('# fallbackRoute:\n#   provider: <provider-id>\n#   model: <model-id>');
   }
+  parts.push(formatConfigYaml(afterRoute).trimEnd());
   if (config.backfill.retitle.length === 0) {
     parts.push('  # retitle:\n  #   - id: <session-id>\n  #     hint: <optional-hint>');
   }
@@ -399,35 +401,12 @@ export function applySettings(raw, changes) {
     }
   }
 
-  if ('subagentProvider' in changes || 'subagentModel' in changes) {
-    const currentRoute = isPlainObject(next.subagentRoute) ? next.subagentRoute : {};
-    const sp = ('subagentProvider' in changes ? changes.subagentProvider : String(currentRoute.provider ?? '')).trim();
-    const sm = ('subagentModel' in changes ? changes.subagentModel : String(currentRoute.model ?? '')).trim();
-    if (sp === '' && sm === '') {
-      Reflect.deleteProperty(next, 'subagentRoute');
-    } else {
-      if (sp === '' || sm === '') {
-        throw rejected('config.subagentRoute.provider and model must be supplied together');
-      }
-      next.subagentRoute = { provider: sp, model: sm };
-    }
-  }
-
-  if ('fallbackProvider' in changes || 'fallbackModel' in changes) {
-    const currentBackfill = isPlainObject(next.backfill) ? { ...next.backfill } : {};
-    const currentRoute = isPlainObject(currentBackfill.fallbackRoute) ? currentBackfill.fallbackRoute : {};
-    const fp = ('fallbackProvider' in changes ? changes.fallbackProvider : String(currentRoute.provider ?? '')).trim();
-    const fm = ('fallbackModel' in changes ? changes.fallbackModel : String(currentRoute.model ?? '')).trim();
-    if (fp === '' && fm === '') {
-      Reflect.deleteProperty(currentBackfill, 'fallbackRoute');
-    } else {
-      if (fp === '' || fm === '') {
-        throw rejected('config.backfill.fallbackRoute.provider and model must be supplied together');
-      }
-      currentBackfill.fallbackRoute = { provider: fp, model: fm };
-    }
-    next.backfill = currentBackfill;
-  }
+  applyRoutePair(changes, next, {
+    providerKey: 'subagentProvider', modelKey: 'subagentModel', routeKey: 'subagentRoute', field: 'subagentRoute',
+  });
+  applyRoutePair(changes, next, {
+    providerKey: 'fallbackProvider', modelKey: 'fallbackModel', routeKey: 'fallbackRoute', field: 'fallbackRoute',
+  });
 
   try {
     resolveConfig(next);
@@ -435,6 +414,36 @@ export function applySettings(raw, changes) {
     throw rejected(String(error?.message ?? error).replace(/^session-title-template:\s*/u, ''));
   }
   return next;
+}
+
+/**
+ * Merge one provider/model pair from the form into its route object.
+ *
+ * Both routes follow the same rule: two empty halves remove the route, one
+ * empty half is refused, and any other combination replaces the pair while the
+ * rest of the raw config stays untouched.
+ *
+ * @param changes - The form change set (never mutated).
+ * @param next - Raw config being built.
+ * @param keys - The form field names and the raw route they write.
+ * @param keys.providerKey - Form field carrying the provider.
+ * @param keys.modelKey - Form field carrying the model.
+ * @param keys.routeKey - Raw config key holding `{ provider, model }`.
+ * @param keys.field - Config field named in a validation message.
+ */
+function applyRoutePair(changes, next, { providerKey, modelKey, routeKey, field }) {
+  if (!(providerKey in changes) && !(modelKey in changes)) return;
+  const current = isPlainObject(next[routeKey]) ? next[routeKey] : {};
+  const provider = (providerKey in changes ? changes[providerKey] : String(current.provider ?? '')).trim();
+  const model = (modelKey in changes ? changes[modelKey] : String(current.model ?? '')).trim();
+  if (provider === '' && model === '') {
+    Reflect.deleteProperty(next, routeKey);
+    return;
+  }
+  if (provider === '' || model === '') {
+    throw rejected(`config.${field}.provider and model must be supplied together`);
+  }
+  next[routeKey] = { provider, model };
 }
 
 /**

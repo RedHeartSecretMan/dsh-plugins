@@ -65,6 +65,22 @@ test('a duplicated shared file is discovered once', async () => {
   assert.equal(resolved.filter(path => path === harnessFile).length, 1);
 });
 
+test('an unreadable candidate is skipped instead of aborting discovery', async () => {
+  const { root, shared, harness, cwd } = await tree();
+  // 指向不存在的目标：Linux 上是 ENOENT，Windows 上是平台错误码（无法遵循链接）。
+  await rm(join(shared, 'AGENTS.md'));
+  await symlink(join(root, 'missing-target.md'), join(shared, 'AGENTS.md'));
+  process.env.DSH_AGENTS_HOME = shared;
+  process.env.DSH_HOME = harness;
+
+  const records = await discoverInstructionFilesLocally({ cwd, onDiagnostic: () => {} });
+  const paths = records.map(record => record.absolutePath);
+  // 坏候选只跳过自己：其余可读来源仍必须被解析出来。
+  assert.ok(paths.includes(join(harness, 'AGENTS.md')));
+  assert.ok(paths.includes(join(root, 'AGENTS.md')));
+  assert.ok(!paths.includes(join(shared, 'AGENTS.md')));
+});
+
 test('a working directory outside a repository only reads itself', async () => {
   const loose = await mkdtemp(join(scratch, 'loose-'));
   await writeFile(join(loose, 'AGENTS.md'), `${NAMING}`);

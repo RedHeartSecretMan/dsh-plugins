@@ -94,7 +94,7 @@ function fixture({ snapshot, replies = [[{ type: 'text-delta', index: 0, text: t
 test('first automatic fallback is not an explicit refresh and keeps the primary route', async () => {
   const f = fixture({ snapshot: { title: '修复登录超时', source: { kind: 'fallback' }, messageSeqs: [1], eventSeq: 2 } });
   try {
-    await f.generate({ backfill: { fallbackRoute: { provider: 'backup', model: 'm' } }, agentsInstructions: { enabled: false } });
+    await f.generate({ fallbackRoute: { provider: 'backup', model: 'm' }, agentsInstructions: { enabled: false } });
     assert.equal(f.calls[0].provider, 'primary');
     assert.doesNotMatch(f.calls[0].system, /Explicit refresh:/);
   } finally { await f.dispose(); }
@@ -145,7 +145,7 @@ test('unavailable instruction discovery still allows ordinary title generation',
 test('terminal error uses the configured fallback route', async () => {
   const f = fixture({ replies: [[finish('error')], [{ type: 'text-delta', index: 0, text: title }, finish()]] });
   try {
-    const result = await f.generate({ backfill: { fallbackRoute: { provider: 'backup', model: 'backup-model' } } });
+    const result = await f.generate({ fallbackRoute: { provider: 'backup', model: 'backup-model' } });
     assert.deepEqual(f.calls.map(c => c.provider), ['primary', 'backup']);
     assert.equal(result.title, title); assert.equal(result.model.provider, 'backup');
   } finally { await f.dispose(); }
@@ -197,7 +197,7 @@ test('an abort just as the iterator closes is still rejected', async () => {
 test('cancellation during a stream does not start a fallback request', async () => {
   const f = fixture(); const abort = new AbortController(); f.request.signal = abort.signal;
   f.ctx.llm.stream = async function* () { abort.abort(); yield finish('aborted'); };
-  try { await assert.rejects(f.generate({ backfill: { fallbackRoute: { provider: 'b', model: 'm' } } }), e => e.name === 'AbortError'); } finally { await f.dispose(); }
+  try { await assert.rejects(f.generate({ fallbackRoute: { provider: 'b', model: 'm' } }), e => e.name === 'AbortError'); } finally { await f.dispose(); }
 });
 test('auxiliary title request records the canonical message source kind', async () => {
   const f = fixture();

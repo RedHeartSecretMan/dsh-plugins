@@ -88,7 +88,7 @@ test('an impossible budget is a configuration error, not a silent skip', () => {
 });
 
 test('resolveTargets always includes the configured fallback route once', () => {
-  const withFallback = { ...config, backfill: { ...config.backfill, fallbackRoute: { provider: 'backup', model: 'b' } } };
+  const withFallback = { ...config, fallbackRoute: { provider: 'backup', model: 'b' } };
   const ctx = { sessionProjections: { stateOf: () => undefined }, llm: {} };
   const session = { header: { createdAt: 1 }, requestHeader: () => ({ config: { provider: 'primary', model: 'm' } }) };
   const targets = resolveTargets(withFallback, { session }, { targeted: false }, ctx);
@@ -111,7 +111,7 @@ test('resolveTargets routes subagents to subagentRoute when set, otherwise follo
     provider: 'main-p',
     model: 'main-m',
     subagentRoute: { provider: 'sub-p', model: 'sub-m' },
-    backfill: { fallbackRoute: { provider: 'fb-p', model: 'fb-m' } },
+    fallbackRoute: { provider: 'fb-p', model: 'fb-m' },
   });
   const rootSession = { header: { createdAt: 1 } };
   const subSession = { header: { createdAt: 1, origin: 'subagent' } };

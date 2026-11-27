@@ -104,6 +104,43 @@ test('returns non-cacheable structured snapshot and text for a live session with
   assert.equal(appended, 0);
 });
 
+test('serves a loopback request when the Harness passes no peer argument', async () => {
+  // Harness 0.2.2 调用 handler(req, res)：第三个参数缺席。此时必须回退到环回信任判定，
+  // 否则设置页与状态接口在本机恒返回 403。
+  const snapshot = {
+    summary: '内置规则',
+    builtin: {
+      template: '[{date}][{type}] {topic}',
+      dateFormat: 'MMDD',
+      timezone: 'Asia/Shanghai',
+      types: ['功能'],
+      topicMinChars: 8,
+      topicMaxChars: 20,
+    },
+    supplemental: { count: 0, sources: [] },
+    title: { value: '[1126][修复] 修复标题状态接口', source: 'provider', pinned: false },
+    lastFailure: null,
+    probe: { verdict: 'unknown' },
+  };
+  const { ctx, routes } = createHostContext({ sessions: new Map([['S1', { id: 'S1' }]]) });
+  registerStatusRoute(ctx, { describe: async () => snapshot });
+
+  const loopback = {
+    method: 'GET',
+    url: `${STATUS_ROUTE_PATH}?sessionId=S1`,
+    socket: { remoteAddress: '127.0.0.1' },
+    headers: { host: '127.0.0.1:56217' },
+  };
+  const accepted = createMockResponse();
+  await routes[0].handler(loopback, accepted);
+  assert.equal(accepted.statusCode, 200);
+
+  const remote = createMockResponse();
+  await routes[0].handler({ ...loopback, socket: { remoteAddress: '10.1.2.3' } }, remote);
+  assert.equal(remote.statusCode, 403);
+  assert.equal(remote.json().code, 'forbidden');
+});
+
 test('contains handler errors without leaking raw exception messages', async () => {
   const session = { id: 'S1' };
   const records = [];

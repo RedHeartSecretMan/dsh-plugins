@@ -1,6 +1,6 @@
 {
   "name": "@redheartsecretman/session-title-template",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Template-shaped session titles for DeepSeek Harness: a fixed [date][type] topic format with a controlled type vocabulary, CJK spacing, optional backfill, and a sidebar UI for status and manual control.",
   "keywords": [
     "dsh",
@@ -48,7 +48,7 @@
   "icon": "./icon.svg",
   "scripts": {
     "test": "node --test \"test/*.test.js\" && node scripts/verify-client.mjs",
-    "check": "node --check index.js && node --check client.js && node --check lib/title.js && node --check lib/title/text.js && node --check lib/title/format.js && node --check lib/title/prompt.js && node --check lib/title-runtime.js && node --check lib/refresh-policy.js && node --check lib/instructions.js && node --check lib/config.js && node --check lib/state.js && node --check lib/backfill.js && node --check lib/rename.js && node --check lib/title-plan.js && node --check lib/title-state.js && node --check lib/delegation.js && node --check lib/role-probe.js && node --check lib/stream-text.js && node --check lib/run.js && node --check lib/coordination.js && node --check lib/projection.js && node --check lib/commands.js && node --check lib/title-command.js && node --check lib/status-route.js && node --check lib/yaml.js && node --check lib/settings.js && node --check lib/settings-route.js && node --check lib/backfill-tool.js && node --check scripts/verify-runtime.mjs && node --check scripts/verify-client.mjs && node --check test/verify-gateway.mjs",
+    "check": "node --check index.js && node --check client.js && node --check lib/title.js && node --check lib/title/text.js && node --check lib/title/format.js && node --check lib/title/prompt.js && node --check lib/title-runtime.js && node --check lib/refresh-policy.js && node --check lib/instructions.js && node --check lib/config.js && node --check lib/state.js && node --check lib/backfill.js && node --check lib/rename.js && node --check lib/title-plan.js && node --check lib/title-state.js && node --check lib/delegation.js && node --check lib/role-probe.js && node --check lib/stream-text.js && node --check lib/run.js && node --check lib/coordination.js && node --check lib/projection.js && node --check lib/commands.js && node --check lib/title-command.js && node --check lib/owner-gate.js && node --check lib/http.js && node --check lib/status-route.js && node --check lib/yaml.js && node --check lib/settings.js && node --check lib/settings-route.js && node --check lib/backfill-tool.js && node --check scripts/verify-runtime.mjs && node --check scripts/verify-client.mjs && node --check test/verify-gateway.mjs",
     "verify:client": "node scripts/verify-client.mjs",
     "verify:runtime": "ELECTRON_RUN_AS_NODE=1 \"${DSH_NODE_EXECUTABLE:-/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness}\" --expose-internals scripts/verify-runtime.mjs \"${DSH_INSTALL_DIR:-/Applications/DeepSeek Harness.app/Contents/Resources/app.asar/dsh}\""
   },

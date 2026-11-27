@@ -145,7 +145,7 @@ test('a failed round revisits every route before retrying the first', async () =
   try {
     const result = await f.generate({
       retryDelayMs: 0,
-      backfill: { fallbackRoute: { provider: 'backup', model: 'backup-model' } },
+      fallbackRoute: { provider: 'backup', model: 'backup-model' },
       agentsInstructions: { enabled: false },
     });
     assert.equal(result.title, title);
@@ -241,7 +241,7 @@ test('an unusable reply falls through to the backup route instead of repeating t
   try {
     const result = await f.generate({
       retryDelayMs: 0,
-      backfill: { fallbackRoute: { provider: 'backup', model: 'backup-model' } },
+      fallbackRoute: { provider: 'backup', model: 'backup-model' },
       agentsInstructions: { enabled: false },
     });
     assert.equal(result.title, title);
@@ -262,5 +262,5 @@ test('route resolution prefers the supported snapshot face and honours a pending
   assert.deepEqual(resolveRoute({}, { session }, snapshotCtx), { provider: 'new', model: 'new-m' }, 'a pending selection is the route the user just chose');
   const legacyCtx = { sessionProjections: { stateOf: () => ({ lastUsed: { provider: 'last', model: 'last-m' }, pending: null }) } };
   assert.deepEqual(resolveRoute({}, { session }, legacyCtx), { provider: 'last', model: 'last-m' });
-  assert.deepEqual(resolveRoute({ backfill: { fallbackRoute: { provider: 'fb', model: 'fb-m' } } }, { session }, {}), { provider: 'fb', model: 'fb-m' });
+  assert.deepEqual(resolveRoute({ fallbackRoute: { provider: 'fb', model: 'fb-m' } }, { session }, {}), { provider: 'fb', model: 'fb-m' });
 });

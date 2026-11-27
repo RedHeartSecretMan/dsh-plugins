@@ -67,7 +67,7 @@ it("rejects unknown keys at every supported config boundary", () => {
   const cases = [
     [{ maxInputByte: 300 }, "maxInputByte"],
     [{ backfill: { enable: true } }, "backfill.enable"],
-    [{ backfill: { fallbackRoute: { provider: "p", model: "m", extra: true } } }, "backfill.fallbackRoute.extra"],
+    [{ fallbackRoute: { provider: "p", model: "m", extra: true } }, "fallbackRoute.extra"],
     [{ types: [{ key: "fix", hints: "typo" }, "feat"], fallbackType: "fix" }, "types[0].hints"],
     [{ retitle: [{ id: "one" }] }, "retitle"],
   ];
@@ -98,6 +98,15 @@ it("requires paired routes and strictly typed vocabulary, flags, and hints", () 
   assert.ok(Object.isFrozen(withSubagent.subagentRoute));
   assert.throws(() => resolveConfig({ subagentRoute: { provider: "sp" } }), /subagentRoute\.model/u);
   assert.throws(() => resolveConfig({ subagentRoute: { provider: "sp", model: "sm", extra: 1 } }), /subagentRoute\.extra/u);
+
+  const withFallback = resolveConfig({ fallbackRoute: { provider: "fp", model: "fm" } });
+  assert.deepEqual(withFallback.fallbackRoute, { provider: "fp", model: "fm" });
+  assert.ok(Object.isFrozen(withFallback.fallbackRoute));
+  assert.throws(
+    () => resolveConfig({ backfill: { fallbackRoute: { provider: "fp", model: "fm" } } }),
+    /backfill\.fallbackRoute moved to config\.fallbackRoute/u,
+    "the old nested key must be refused instead of silently ignored",
+  );
 
   const perType = resolveConfig({
     types: [

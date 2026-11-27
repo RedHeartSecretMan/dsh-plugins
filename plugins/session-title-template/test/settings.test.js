@@ -42,7 +42,8 @@ test('values and options describe every editable field from a resolved config', 
     subagentRoute: { provider: 'sub-p', model: 'sub-m' },
     maxProvisionalRefinements: 6,
     agentsInstructions: { enabled: true, maxBytes: 8192 },
-    backfill: { enabled: true, fallbackRoute: { provider: 'fb-p', model: 'fb-m' } },
+    backfill: { enabled: true },
+    fallbackRoute: { provider: 'fb-p', model: 'fb-m' },
     maxInputBytes: 8192,
     maxOutputTokens: 2048,
     timeoutMs: 30000,
@@ -96,9 +97,9 @@ test('a change set merges into the raw config without mutating it or dropping si
     language: 'zh',
     backfill: {
       enabled: false,
-      fallbackRoute: { provider: 'b', model: 'bm' },
       retitle: [{ id: 'sess-1', hint: 'Keep API nouns' }],
     },
+    fallbackRoute: { provider: 'b', model: 'bm' },
     types: ['a', 'b'],
     fallbackType: 'a',
   };
@@ -114,9 +115,9 @@ test('a change set merges into the raw config without mutating it or dropping si
   assert.equal(next.language, 'en');
   assert.deepEqual(next.backfill, {
     enabled: true,
-    fallbackRoute: { provider: 'b', model: 'bm' },
     retitle: [{ id: 'sess-1', hint: 'Keep API nouns' }],
-  }, 'fallbackRoute and retitle survive a toggle');
+  }, 'retitle survives a toggle');
+  assert.deepEqual(next.fallbackRoute, { provider: 'b', model: 'bm' }, 'the top-level fallback route survives too');
   assert.deepEqual(next.types, ['a', 'b']);
   assert.equal(next.topicMaxChars, 30);
   assert.deepEqual(next.agentsInstructions, { maxBytes: 8192 });
@@ -132,14 +133,14 @@ test('provider/model and fallbackProvider/fallbackModel set and clear cleanly wh
     { backfill: { enabled: false, retitle: [{ id: 's1', hint: 'h' }] } },
     { fallbackProvider: 'deepseek', fallbackModel: 'deepseek-chat' },
   );
+  assert.deepEqual(setFb.fallbackRoute, { provider: 'deepseek', model: 'deepseek-chat' });
   assert.deepEqual(setFb.backfill, {
     enabled: false,
     retitle: [{ id: 's1', hint: 'h' }],
-    fallbackRoute: { provider: 'deepseek', model: 'deepseek-chat' },
-  });
+  }, 'the form writes the top-level route, not the backfill block');
 
   const clearedFb = applySettings(setFb, { fallbackProvider: '', fallbackModel: '' });
-  assert.equal('fallbackRoute' in clearedFb.backfill, false);
+  assert.equal('fallbackRoute' in clearedFb, false);
   assert.deepEqual(clearedFb.backfill.retitle, [{ id: 's1', hint: 'h' }]);
 });
 
@@ -230,7 +231,8 @@ test('applyYamlConfig parses and validates full YAML documents and rejects synta
   assert.ok(fullYaml.includes('# provider:'), 'fullYaml shows commented provider example when unset');
   assert.ok(fullYaml.includes('# model:'), 'fullYaml shows commented model example when unset');
   assert.ok(fullYaml.includes('# subagentRoute:'), 'fullYaml shows commented subagentRoute example when unset');
-  assert.ok(fullYaml.includes('  # fallbackRoute:'), 'fullYaml shows commented backfill.fallbackRoute when unset');
+  assert.ok(fullYaml.includes('# fallbackRoute:'), 'fullYaml shows a commented top-level fallbackRoute when unset');
+  assert.ok(!/^\s+# fallbackRoute:/mu.test(fullYaml), 'the fallback route example must not sit inside the backfill block');
   assert.ok(fullYaml.includes('  # retitle:'), 'fullYaml shows commented backfill.retitle when empty');
   assert.deepEqual(
     settingsValues(resolveConfig(applyYamlConfig(fullYaml))),
@@ -242,7 +244,7 @@ test('applyYamlConfig parses and validates full YAML documents and rejects synta
   const parsedUncommented = applyYamlConfig(uncommented);
   assert.equal(parsedUncommented.provider, '<provider-id>');
   assert.equal(parsedUncommented.subagentRoute.model, '<model-id>');
-  assert.equal(parsedUncommented.backfill.fallbackRoute.model, '<model-id>');
+  assert.equal(parsedUncommented.fallbackRoute.model, '<model-id>');
   assert.equal(parsedUncommented.backfill.retitle[0].id, '<session-id>');
 });
 

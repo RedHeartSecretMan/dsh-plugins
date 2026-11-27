@@ -140,7 +140,7 @@ export function selectInput(context, config, plan) {
  */
 export function resolveTargets(config, request, plan, ctx) {
   let route = resolveRoute(config, request, ctx);
-  const fallbackRoute = config.backfill.fallbackRoute;
+  const fallbackRoute = config.fallbackRoute;
   if (plan.targeted && fallbackRoute) route = fallbackRoute;
   if (!route) return { none: true };
   const routes = [route];

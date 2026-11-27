@@ -121,8 +121,18 @@ function ancestorChain(root, cwd) {
   }
 }
 
-/** Resolve one regular instruction file and return its canonical identity. */
-async function instructionFileKey(path, signal) {
+/**
+ * Resolve one regular instruction file and return its canonical identity.
+ *
+ * A candidate that cannot be identified contributes no guidance; it must not
+ * abort discovery, or one unreadable file (a broken symlink, a permission
+ * denial, a path the platform refuses to stat) would disable every readable
+ * AGENTS.md. Only a normal absence is silent; anything else reports through
+ * `onDiagnostic` so the status view can show why a source is missing.
+ *
+ * @returns the canonical key, or undefined when this candidate carries nothing.
+ */
+async function instructionFileKey(path, signal, onDiagnostic) {
   signal?.throwIfAborted();
   try {
     const info = await stat(path);
@@ -131,7 +141,8 @@ async function instructionFileKey(path, signal) {
   } catch (error) {
     signal?.throwIfAborted();
     if (error?.code === "ENOENT" || error?.code === "ENOTDIR") return undefined;
-    throw error;
+    onDiagnostic?.("candidate-unreadable");
+    return undefined;
   }
 }
 
@@ -157,10 +168,11 @@ function displayPath(path) {
  * @param options - Discovery request from the reader.
  * @param options.cwd - Absolute working directory of the requesting session.
  * @param options.signal - Cancellation signal.
+ * @param options.onDiagnostic - Called with a reason when a candidate exists but cannot be read.
  * @returns Records shaped like the SDK result: `{ absolutePath, displayPath }`.
  */
 export async function discoverInstructionFilesLocally(options = {}) {
-  const { cwd, signal } = options;
+  const { cwd, signal, onDiagnostic } = options;
   if (typeof cwd !== "string" || !isAbsolute(cwd)) return [];
   const env = process.env;
   const harnessHome = resolve(configuredPath(env.DSH_HOME) ?? join(homedir(), ".dsh"));
@@ -176,7 +188,7 @@ export async function discoverInstructionFilesLocally(options = {}) {
   const consider = async (directory, name) => {
     signal?.throwIfAborted();
     const absolutePath = resolve(directory, name);
-    const key = await instructionFileKey(absolutePath, signal);
+    const key = await instructionFileKey(absolutePath, signal, onDiagnostic);
     if (key === undefined || seen.has(key)) return;
     seen.add(key);
     records.push({ absolutePath, displayPath: displayPath(absolutePath) });
@@ -277,6 +289,7 @@ export function createInstructionReader({ discover = discoverInstructionFilesLoc
       const files = await discover({
         cwd,
         signal: controller.signal,
+        onDiagnostic: note,
       });
       controller.signal.throwIfAborted();
       const entries = [];

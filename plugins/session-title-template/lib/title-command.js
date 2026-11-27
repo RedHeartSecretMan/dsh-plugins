@@ -144,7 +144,7 @@ export function renderTitleStatus(snapshot) {
 
   if (probe !== null && probe !== undefined) {
     lines.push(`探针结论：${probe.verdict === 'supported'
-      ? '开发者角色正常，该端点能读到对应指令块'
+      ? '开发者角色正常，该端点能读到标题指令块'
       : '该端点丢弃了指令块，标题指令可能未送达'}`);
   }
 

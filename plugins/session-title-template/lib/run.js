@@ -2,6 +2,29 @@
 import { randomUUID } from 'node:crypto';
 import { collectStreamText } from './stream-text.js';
 
+/**
+ * Resolve the route for a session this process has not opened.
+ *
+ * A cold session carries no live projection, so the precedence is the same
+ * chain minus that step; expressing it through {@link resolveRoute} keeps one
+ * definition of "which model names this session" for both surfaces.
+ *
+ * @param config - Resolved plugin config.
+ * @param view - The cold session's own origin and last request header.
+ * @returns The route, or undefined when nothing resolves.
+ */
+export function resolveColdRoute(config, view = {}) {
+  const { isSubagent = false, headerConfig } = view;
+  return resolveRoute(config, {
+    session: {
+      header: { origin: isSubagent ? 'subagent' : 'root' },
+      ...(headerConfig?.provider && headerConfig?.model
+        ? { requestHeader: () => ({ config: headerConfig }) }
+        : {}),
+    },
+  }, {});
+}
+
 /** Pick the route used for a title request without switching the main agent route. */
 export function resolveRoute(config, request, ctx) {
   const isSubagent = request?.session?.header?.origin === 'subagent';
@@ -21,7 +44,7 @@ export function resolveRoute(config, request, ctx) {
   } catch {
     // The optional modelSelection unit is not registered in every profile.
   }
-  return config.backfill.fallbackRoute;
+  return config.fallbackRoute;
 }
 
 /** Read only text blocks, and require a successful terminal outcome. */

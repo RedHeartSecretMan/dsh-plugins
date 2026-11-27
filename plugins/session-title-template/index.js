@@ -6,7 +6,7 @@ import { applyBackfill, backfillTitles, planBackfill } from './lib/backfill.js';
 import { compileTitlePattern } from './lib/title.js';
 import { createTitleRuntime } from './lib/title-runtime.js';
 import { describeTitleState } from './lib/title-state.js';
-import { resolveRoute } from './lib/run.js';
+import { resolveColdRoute, resolveRoute } from './lib/run.js';
 import { createRoleProbe } from './lib/role-probe.js';
 import { registerCoordination } from './lib/coordination.js';
 import { titleStateProjectionDefinition } from './lib/projection.js';
@@ -99,14 +99,10 @@ export async function apply(ctx, rawConfig) {
       ? await readInstructions({ cwd, maxBytes: config.agentsInstructions.maxBytes })
       : undefined;
     const headerConfig = observed.events.findLast(event => event?.type === 'request/header')?.data?.config;
-    const isColdSubagent = observed.session?.origin === 'subagent';
-    const route = isColdSubagent && config.subagentRoute !== undefined
-      ? config.subagentRoute
-      : config.provider !== undefined
-        ? { provider: config.provider, model: config.model }
-        : (headerConfig?.provider && headerConfig?.model
-          ? { provider: headerConfig.provider, model: headerConfig.model }
-          : config.backfill.fallbackRoute);
+    const route = resolveColdRoute(config, {
+      isSubagent: observed.session?.origin === 'subagent',
+      headerConfig,
+    });
     const id = String(sessionId);
     return {
       snapshot: describeTitleState({

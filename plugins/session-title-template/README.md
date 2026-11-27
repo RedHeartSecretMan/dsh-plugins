@@ -8,10 +8,10 @@ A configurable `[date][type] topic` title provider for [DeepSeek Harness](https:
 
 Requires Node.js 22+. Tested against the installed DSH `0.2.1-rc.3`, `0.2.2-rc.1`, `0.2.2-rc.2` and `0.2.3-alpha.2` services; declared compatibility is `>=0.2.1-rc.3 <0.6.0`.
 
-The package is `@redheartsecretman/session-title-template`, version `0.2.0`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz) through the plugin manager (`install_bundle`) or the CLI:
+The package is `@redheartsecretman/session-title-template`, version `0.2.1`. Install the [Release archive](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz) through the plugin manager (`install_bundle`) or the CLI:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz
 ```
 
 To install from a checkout instead:
@@ -38,12 +38,13 @@ Override `id: session-title-template` in your profile's user patch. The whole `c
 | `uiLanguage` | `auto` | Plugin UI language override. `auto` follows DSH, while `zh` and `en` affect this plugin's menus and dialogs only |
 | `types` | Nine Chinese types | Array of strings or `{ key, hint, provisional?, maxRefinements? }` objects (`maxRefinements` is an optional per-type 1–100 override requiring `provisional: true`) |
 | `fallbackType` | `探索` | Local fallback type when no route is available; must exist in the vocabulary |
-| `fallbackTruncation` | `natural` | Model-free fallback topic truncation. `natural` preserves sentence and word boundaries, while `hard` follows the width limit strictly |
+| `fallbackTruncation` | `natural` | Model-free fallback topic truncation. `natural` prefers a completed sentence before falling back to a clause boundary, while `hard` stops at the last whole token that fits — it never splits a token, so the result can stay just under the limit |
 | `cjkSpacing` | `true` | Space between Han text and adjacent Latin letters/digits |
 | `topicMinChars` | `8` | Prompt guidance; a useful short topic is not rejected just to reach this target |
 | `topicMaxChars` | `20` | CJK-equivalent width limit for the topic (ASCII = 0.5, spaces = 0), truncated on word/clause boundaries |
 | `provider` / `model` | unset | Main-agent title route; supply both or neither, otherwise use the session route |
 | `subagentRoute` | unset | Optional `{ provider, model }` route for subagent title generation/refinement; inherits the main route when unset |
+| `fallbackRoute` | unset | Optional `{ provider, model }` backup for **every** title request: the route used when no primary route resolves, the retry fallback after a primary failure, and the preferred route for a targeted retitle; independent of `backfill.enabled` |
 | `subagentDelegationLabel` | `true` | Use a subagent's `delegationLabel` as the first title without a model call. Set `false` to call the title model on turn one |
 | `maxInputBytes` | `4096` | Final framed JSON UTF-8 byte budget, including escaping and wrapper text |
 | `maxOutputTokens` | `4096` | Output cap; uses the lowest supported reasoning effort; the cap includes hidden reasoning, while topic length is validated separately |
@@ -55,7 +56,6 @@ Override `id: session-title-template` in your profile's user patch. The whole `c
 | `agentsInstructions.enabled` | `true` | Read applicable AGENTS naming excerpts and add main-agent naming coordination; `false` disables both |
 | `agentsInstructions.maxBytes` | `4096` | Final supplemental guidance UTF-8 byte limit; integer from `256` to `65536` |
 | `backfill.enabled` | `false` | Run one historical maintenance pass after startup |
-| `backfill.fallbackRoute` | unset | `{ provider, model }`; also the backup for ordinary title requests |
 | `backfill.retitle` | `[]` | Targets `[{ id, hint }]`, executed only while backfill is enabled |
 
 Unknown keys produce an activation error rather than silently discarding settings.
@@ -121,7 +121,7 @@ The package includes a Web UI client half (`client.js`) and an in-session `/titl
   - **Auto-generate**: Forces regeneration (and unpins a manual title) on an open session through an owner-only `POST /session-title-template/refresh` route (falling back to `/title refresh` before a Host reload), showing in-flight progress without appending command blocks into the conversation.
   - **Pin current**: Pins the current title via `SessionFace.rename` (`ctx.sessions.using`), resuming a cold session when needed; disabled when the title is already pinned or absent.
   - **View status**: Opens a localized `shell.overlay` modal showing the current title and badge, any unresolved failure with advice, built-in rules, contributing `AGENTS.md` supplements, and the role-probe verdict. Reads through an owner-only `GET /session-title-template/status` route for both live and persisted cold sessions without opening an agent or mutating the session log.
-  - **Naming settings**: Opens a four-tab modal (**Format** with live title preview, `template`, `language`, topic length, CJK spacing, `dateFormat`, and `timezone`; **Types** with decoupled **Policy** (`fallbackType` plus per-type provisional refinement counts) and collapsible **Vocabulary** (`types` keys/hints and restore-defaults); **Models** with a unified **Title generation** card for main-agent, subagent (`subagentRoute`), and fallback (`backfill.fallbackRoute`) routes backed by `ctx.llm` plus manual entry; **Behavior** with **General** toggles and `agentsInstructions.maxBytes`, plus collapsible **Advanced** parameters for input/output budgets, timeout, and retries).
+  - **Naming settings**: Opens a four-tab modal (**Format** with live title preview, `template`, `language`, topic length, CJK spacing, `dateFormat`, and `timezone`; **Types** with decoupled **Policy** (`fallbackType` plus per-type provisional refinement counts) and collapsible **Vocabulary** (`types` keys/hints and restore-defaults); **Models** with a unified **Title generation** card for main-agent, subagent (`subagentRoute`), and fallback (`fallbackRoute`) routes backed by `ctx.llm` plus manual entry; **Behavior** with **General** toggles and `agentsInstructions.maxBytes`, plus collapsible **Advanced** parameters for input/output budgets, timeout, and retries).
 - **Plugin detail page YAML editor** (`plugins.bundle.config`): In DSH's Plugins manager detail page for this package, developers can view and directly edit the plugin's complete `config` block as YAML (including `backfill.retitle`), expand all defaults, validate syntax and schema before saving, or reset to bundle defaults. Both settings surfaces read and persist through the owner-only `GET`/`POST /session-title-template/settings` route backed by the Harness config editor, keeping comments, other plugins' rows, and `!!js` expressions in the profile patch intact. Saving reloads this plugin (cancelling in-flight title requests); unchanged saves never write, and read-only profiles or overridden values are surfaced explicitly.
 - **`/title` command**: Inside any live conversation, run `/title` (or `/title status`), `/title refresh`, `/title pin <title>`, or `/title auto`.
 

@@ -14,10 +14,10 @@
 
 需要 Node.js 22 或更新版本；在 DSH `0.2.1-rc.3`、`0.2.2-rc.1`、`0.2.2-rc.2` 与 `0.2.3-alpha.2` 的真实 SessionStore、标题服务和 Cordis 生命周期上验证过。声明支持 `>=0.2.1-rc.3 <0.6.0`，不对更高版本的内部接口作保证。
 
-包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.2.0`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz)，或使用 CLI：
+包名为 `@redheartsecretman/session-title-template`，当前版本为 `0.2.1`。在插件管理中通过 `install_bundle` 安装 [Release 压缩包](https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz)，或使用 CLI：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.0/session-title-template-0.2.0.tgz
+dsh plugin --profile <profile> add https://github.com/RedHeartSecretMan/dsh-plugins/releases/download/session-title-template-v0.2.1/session-title-template-0.2.1.tgz
 ```
 
 也可以从仓库目录安装：
@@ -44,12 +44,13 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 | `uiLanguage` | `auto` | 插件界面语言。`auto` 跟随 DSH，`zh` 和 `en` 只改变本插件菜单、弹窗与状态页 |
 | `types` | 9 类中文词表 | 字符串，或 `{ key, hint, provisional?, maxRefinements? }` 对象数组（`maxRefinements` 为可选的按类型 1–100 细化窗口覆盖，须配合 `provisional: true`） |
 | `fallbackType` | `探索` | 无可用路由时的本地回退类型，必须在词表内 |
-| `fallbackTruncation` | `natural` | 无模型回退主题的截断模式。`natural` 按句末和词语边界保留语义，`hard` 严格贴合字宽上限 |
+| `fallbackTruncation` | `natural` | 无模型回退主题的截断模式。`natural` 优先停在完整句末，其次回退到分句边界；`hard` 停在最后一个装得下的完整词元，它不切开词元，因此结果可能略短于上限 |
 | `cjkSpacing` | `true` | 中文与相邻英文字母、数字之间补空格 |
 | `topicMinChars` | `8` | 提示词目标下限；不为凑长度拒绝简短有效主题 |
 | `topicMaxChars` | `20` | 按中文等效字宽（ASCII 计 0.5、空格计 0）及分词/分句边界安全截断主题 |
 | `provider` / `model` | 未设置 | 主代理标题生成路由；必须同时填写，否则跟随会话路由 |
 | `subagentRoute` | 未设置 | 可选 `{ provider, model }`，子智能体生成或细化标题时使用；未设置时跟随主代理 |
+| `fallbackRoute` | 未设置 | 可选 `{ provider, model }`。**所有**标题请求的兜底路由（主路由缺失时兜底、主路由失败时重试备用、定点重命名优先使用）；不受 `backfill.enabled` 影响 |
 | `subagentDelegationLabel` | `true` | 子智能体首轮有 `delegationLabel` 时直接使用它生成标题。设为 `false` 后首轮直接调用标题模型 |
 | `maxInputBytes` | `4096` | **最终 JSON 框架文本**的 UTF-8 字节上限，含转义和包装 |
 | `maxOutputTokens` | `4096` | 请求输出上限；选择模型支持的最低推理档位；上限包含隐藏推理词元，标题字数另行校验 |
@@ -61,7 +62,6 @@ dsh plugin --profile <profile> add /absolute/path/to/dsh-plugins/plugins/session
 | `agentsInstructions.enabled` | `true` | 读取适用的 AGENTS 命名片段并添加主代理命名协调；`false` 同时关闭两者 |
 | `agentsInstructions.maxBytes` | `4096` | 最终补充指导文本的 UTF-8 字节上限，必须是 `256` 至 `65536` 的整数 |
 | `backfill.enabled` | `false` | 启动后执行一次历史维护 |
-| `backfill.fallbackRoute` | 未设置 | `{ provider, model }`；同时是普通标题请求的备用路由 |
 | `backfill.retitle` | `[]` | 定点重命名列表 `[{ id, hint }]`，仅在启用回填时执行 |
 
 未知字段会直接报错，不再静默忽略。
@@ -129,7 +129,7 @@ DSH 会阻止普通自动请求覆盖手动标题。界面的**显式刷新**有
   - **自动生成**：对已打开会话强制重新生成并解除手动固定；优先走 owner 鉴权的 `POST /session-title-template/refresh` 路由（Host 未重载前自动回落到 `/title refresh`），带进行中提示与防重入，不向对话记录追加命令块。
   - **固定当前**：通过 `ctx.sessions.using(..., ref => ref.binding.session.rename(...))` 固定当前标题，冷会话也会自动恢复并落盘；标题已固定或尚无标题时自动禁用。
   - **查看状态**：打开与当前界面语言一致的 `shell.overlay` 模态框，展示当前标题与状态徽章、未恢复的最近失败与建议、内置规则、`AGENTS.md` 补充来源清单及探针结论；通过 owner 鉴权的只读 `GET /session-title-template/status` 路由同时支持活会话与冷会话，不恢复冷会话 Agent，也不修改会话日志。
-  - **命名设置**：打开 4-Tab 图形配置弹窗——**格式**（实时标题预览，下分「标题」与「日期」两张卡片，覆盖 `template`、标题语言、主题长度、中英间距、形式与时区）、**类型**（下分「策略」与可折叠「词表」两张卡片：策略中独立维护 `fallbackType` 及可增删的临时类型与各自细化次数，词表专注维护类型名称、分类说明与恢复默认词表）、**模型**（合并为「标题生成」单卡片，基于 `ctx.llm` 自动发现的下拉菜单 + 手动输入入口，依次配置主代理、子代理 `subagentRoute` 与兜底 `backfill.fallbackRoute`）、**行为**（下分「常规参数」与可折叠「高级参数」，涵盖 AGENTS.md 补充规则开关与读取上限、端点探针、历史补全及 `maxInputBytes` / `maxOutputTokens` / `timeoutMs` / `retryAttempts` / `retryDelayMs`）。
+  - **命名设置**：打开 4-Tab 图形配置弹窗——**格式**（实时标题预览，下分「标题」与「日期」两张卡片，覆盖 `template`、标题语言、主题长度、中英间距、形式与时区）、**类型**（下分「策略」与可折叠「词表」两张卡片：策略中独立维护 `fallbackType` 及可增删的临时类型与各自细化次数，词表专注维护类型名称、分类说明与恢复默认词表）、**模型**（合并为「标题生成」单卡片，基于 `ctx.llm` 自动发现的下拉菜单 + 手动输入入口，依次配置主代理、子代理 `subagentRoute` 与兜底 `fallbackRoute`）、**行为**（下分「常规参数」与可折叠「高级参数」，涵盖 AGENTS.md 补充规则开关与读取上限、端点探针、历史补全及 `maxInputBytes` / `maxOutputTokens` / `timeoutMs` / `retryAttempts` / `retryDelayMs`）。
 - **插件详情页 YAML 编辑器**（`plugins.bundle.config`）：在 DSH「插件管理」中点开「会话标题模板」详情页，即可面向开发者直接编辑本插件完整的 `config` YAML（含 `backfill.retitle`），支持一键展开完整默认配置、保存前校验 YAML 语法与配置 schema、一键恢复默认配置。两处设置入口均通过 owner 鉴权的 `GET`/`POST /session-title-template/settings` 路由经 Harness 配置编辑器原子写盘，保留 profile patch 中的注释、其他插件配置与 `!!js` 表达式；保存仅重载本插件（取消进行中的标题请求），未改动时不写盘，只读 profile 或被上层覆盖的配置会明确提示。
 - **`/title` 命令**：在任意活会话中可直接输入 `/title`（或 `/title status`）、`/title refresh`、`/title pin <标题>`、`/title auto`。
 

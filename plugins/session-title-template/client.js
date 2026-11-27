@@ -589,7 +589,40 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * Value chip shared by every rule row, so the template, the date source and
+     * the topic width read as one vocabulary instead of prose beside code.
+     * `mono` is for literal syntax such as the template placeholders.
+     */
+    function ruleValueStyle(mono = false) {
+      return {
+        display: 'inline-block', maxWidth: '100%', overflowWrap: 'anywhere',
+        fontFamily: mono ? CODE_FONT : 'inherit',
+        fontSize: 12, lineHeight: '18px',
+        padding: '1px 7px', borderRadius: 6,
+        background: 'var(--dsw-alias-markdown-inline-code)',
+        border: '1px solid var(--dsw-alias-border-l1)',
+        color: 'var(--dsw-alias-label-primary)',
+      };
+    }
+
     const CODE_FONT = 'var(--dsw-font-markdown-code-font-family, ui-monospace, SFMono-Regular, Menlo, monospace)';
+
+    /**
+     * Semantic control-width tiers and shared metrics for modal controls.
+     * Paired controls (topic length, fallback policy) derive from `wide` via grid
+     * tracks instead of introducing standalone hard-coded pixel widths.
+     */
+    const CONTROL_WIDTH = Object.freeze({
+      wide: 240,
+      medium: 120,
+      compact: 48,
+      switchCol: 44,
+      icon: 28,
+      buttonMin: 68,
+    });
+    const CONTROL_HEIGHT = 28;
+    const CONTROL_GAP = 8;
 
     /**
      * Focus trap, Escape-to-close and focus restore shared by every modal here.
@@ -718,7 +751,7 @@ window.__ModuleLoader__.load({
               hoverColor: 'var(--dsw-alias-label-primary)',
               style: {
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 28, height: 28, padding: 0, border: 0, borderRadius: '50%',
+                width: CONTROL_WIDTH.icon, height: CONTROL_HEIGHT, padding: 0, border: 0, borderRadius: '50%',
                 background: 'var(--dsw-alias-interactive-bg-hover)',
                 color: 'var(--dsw-alias-label-secondary)',
                 cursor: 'pointer', flex: 'none',
@@ -728,7 +761,7 @@ window.__ModuleLoader__.load({
           ),
           subHeader === null ? null : h('div', {
             style: {
-              padding: '0 20px 12px',
+              padding: '0 20px 12px', overflowY: 'auto', scrollbarGutter: 'stable',
               borderBottom: '1px solid var(--dsw-alias-border-l1)',
               flex: 'none',
             },
@@ -743,7 +776,7 @@ window.__ModuleLoader__.load({
           }, children),
           footer === null ? null : h('div', {
             style: {
-              padding: '12px 20px',
+              padding: '12px 20px', overflowY: 'auto', scrollbarGutter: 'stable',
               borderTop: '1px solid var(--dsw-alias-border-l1)',
               flex: 'none',
             },
@@ -822,20 +855,13 @@ window.__ModuleLoader__.load({
             h('span', null, error),
           )
           : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
-            // 1. Current title hero card
-            h('div', {
-              style: {
-                padding: '12px 14px', borderRadius: 12,
-                background: 'var(--dsw-alias-interactive-bg-hover)',
-                border: '1px solid var(--dsw-alias-border-l1)',
-                display: 'flex', flexDirection: 'column', gap: 6,
-              },
-            },
+            // 1. Current title — section heading outside the card, like the rules card.
+            h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
               h('div', {
-                style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+                style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '0 2px' },
               },
                 h('span', {
-                  style: { fontSize: 11, lineHeight: '16px', fontWeight: 500, color: 'var(--dsw-alias-label-tertiary)' },
+                  style: { fontSize: 12, lineHeight: '18px', fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' },
                 }, t('dialog.currentTitle')),
                 badgeLabel === undefined ? null : h('span', {
                   style: {
@@ -850,13 +876,21 @@ window.__ModuleLoader__.load({
               ),
               h('div', {
                 style: {
-                  fontSize: 14, lineHeight: '21px', fontWeight: 500,
-                  color: 'var(--dsw-alias-label-primary)', overflowWrap: 'anywhere',
+                  padding: '12px 14px', borderRadius: 12,
+                  border: '1px solid var(--dsw-alias-border-l2)',
+                  display: 'flex', flexDirection: 'column', gap: 6,
                 },
-              }, report?.title?.value || displayTitle || t('dialog.noTitle')),
-              pinStatusText === undefined ? null : h('div', {
-                style: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
-              }, t('dialog.pinStateLine', { state: pinStatusText })),
+              },
+                h('div', {
+                  style: {
+                    fontSize: 14, lineHeight: '21px', fontWeight: 500,
+                    color: 'var(--dsw-alias-label-primary)', overflowWrap: 'anywhere',
+                  },
+                }, report?.title?.value || displayTitle || t('dialog.noTitle')),
+                pinStatusText === undefined ? null : h('div', {
+                  style: { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' },
+                }, t('dialog.pinStateLine', { state: pinStatusText })),
+              ),
             ),
 
             // 2. Last failure callout (only when an unresolved failure was recorded)
@@ -910,19 +944,13 @@ window.__ModuleLoader__.load({
                 },
               },
                 report.builtin.template === undefined ? null : h(RuleRow, { label: t('dialog.template') },
-                  h('code', {
-                    style: {
-                      fontFamily: CODE_FONT, fontSize: 12, padding: '2px 6px', borderRadius: 6,
-                      background: 'var(--dsw-alias-markdown-inline-code)',
-                      border: '1px solid var(--dsw-alias-border-l1)',
-                    },
-                  }, report.builtin.template),
+                  h('code', { style: ruleValueStyle(true) }, report.builtin.template),
                 ),
                 report.builtin.dateSource === undefined ? null : h(RuleRow, { label: t('dialog.dateSource') },
-                  report.builtin.dateSource,
+                  h('span', { style: ruleValueStyle() }, report.builtin.dateSource),
                 ),
                 report.builtin.topicLength === undefined ? null : h(RuleRow, { label: t('dialog.topicLength') },
-                  report.builtin.topicLength,
+                  h('span', { style: ruleValueStyle() }, report.builtin.topicLength),
                 ),
                 report.builtin.types.length === 0 ? null : h(RuleRow, { label: t('dialog.types') },
                   h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 5 } },
@@ -1026,8 +1054,11 @@ window.__ModuleLoader__.load({
     /** Ordered tab identifiers for the sidebar naming-settings dialog. */
     const SETTINGS_TABS = ['format', 'types', 'models', 'behavior'];
 
+    /** Fallback refinement limit while the Host value is unknown; mirrors the config default. */
+    const DEFAULT_PROVISIONAL_LIMIT = 4;
+
     /** Shared vocabulary grid so headings, rows, and the add action align. */
-    const TYPE_TABLE_GRID = '96px minmax(0, 1fr) 52px 72px 26px';
+    const TYPE_TABLE_GRID = `${CONTROL_WIDTH.medium}px minmax(0, 1fr) ${CONTROL_WIDTH.switchCol}px ${CONTROL_WIDTH.compact}px ${CONTROL_WIDTH.icon}px`;
 
     /** Map each editable field back to the tab that owns it (for dirty dots and error focus). */
     const SETTINGS_FIELD_TAB = {
@@ -1104,7 +1135,7 @@ window.__ModuleLoader__.load({
     }
 
     /** Extract provisional type rules in `{ key, maxRefinements }` form for the Policy card. */
-    function extractProvisionalRules(types, defaultLimit = 4) {
+    function extractProvisionalRules(types, defaultLimit = DEFAULT_PROVISIONAL_LIMIT) {
       const fallback = Number.isInteger(defaultLimit) && defaultLimit > 0 ? defaultLimit : 4;
       if (!Array.isArray(types)) return [];
       return types
@@ -1136,7 +1167,7 @@ window.__ModuleLoader__.load({
     }
 
     /** Normalize saved type entries with explicit resolved per-type refinement limits. */
-    function normalizeSavedTypes(types, defaultLimit = 4) {
+    function normalizeSavedTypes(types, defaultLimit = DEFAULT_PROVISIONAL_LIMIT) {
       const fallback = Number.isInteger(defaultLimit) && defaultLimit > 0 ? defaultLimit : 4;
       if (!Array.isArray(types)) return [];
       return types.map((entry) => {
@@ -1168,7 +1199,7 @@ window.__ModuleLoader__.load({
         if (key === 'types') {
           let invalidTypeCount = false;
           const defaultLimit = Number.isInteger(draft?.maxProvisionalRefinements) && draft.maxProvisionalRefinements > 0
-            ? draft.maxProvisionalRefinements : (values.maxProvisionalRefinements ?? 4);
+            ? draft.maxProvisionalRefinements : (values.maxProvisionalRefinements ?? DEFAULT_PROVISIONAL_LIMIT);
           const nextTypes = (Array.isArray(draft?.types) ? draft.types : []).map((entry) => {
             const provisional = entry?.provisional === true;
             const text = String(entry?.maxRefinements ?? defaultLimit).trim();
@@ -1209,19 +1240,16 @@ window.__ModuleLoader__.load({
           if (SETTINGS_FIELD_TAB[key]) dirtyTabs.add(SETTINGS_FIELD_TAB[key]);
         }
       }
-      if ('provider' in changes || 'model' in changes) {
-        changes.provider = String(draft?.provider ?? '').trim();
-        changes.model = String(draft?.model ?? '').trim();
-        dirtyTabs.add('models');
-      }
-      if ('subagentProvider' in changes || 'subagentModel' in changes) {
-        changes.subagentProvider = String(draft?.subagentProvider ?? '').trim();
-        changes.subagentModel = String(draft?.subagentModel ?? '').trim();
-        dirtyTabs.add('models');
-      }
-      if ('fallbackProvider' in changes || 'fallbackModel' in changes) {
-        changes.fallbackProvider = String(draft?.fallbackProvider ?? '').trim();
-        changes.fallbackModel = String(draft?.fallbackModel ?? '').trim();
+      // A route pair is only meaningful complete, so a touched half sends both
+      // trimmed halves and lets the Host reject a half-filled pair.
+      for (const [providerKey, modelKey] of [
+        ['provider', 'model'],
+        ['subagentProvider', 'subagentModel'],
+        ['fallbackProvider', 'fallbackModel'],
+      ]) {
+        if (!(providerKey in changes) && !(modelKey in changes)) continue;
+        changes[providerKey] = String(draft?.[providerKey] ?? '').trim();
+        changes[modelKey] = String(draft?.[modelKey] ?? '').trim();
         dirtyTabs.add('models');
       }
       return {
@@ -1500,7 +1528,7 @@ window.__ModuleLoader__.load({
           ? { activeTab: 'types', typesOpen: true }
           : payload?.code === 'invalid-settings' && /config\.maxProvisionalRefinements/u.test(errMessage)
             ? { activeTab: 'types', typesOpen: true }
-            : payload?.code === 'invalid-settings' && /config\.(?:provider|model|subagentRoute|backfill\.fallbackRoute)/u.test(errMessage)
+            : payload?.code === 'invalid-settings' && /config\.(?:provider|model|subagentRoute|fallbackRoute)/u.test(errMessage)
               ? { activeTab: 'models' }
               : payload?.code === 'invalid-settings' && /config\.(?:maxInputBytes|maxOutputTokens|timeoutMs|retryAttempts|retryDelayMs|uiLanguage)/u.test(errMessage)
                 ? { activeTab: 'behavior', advancedOpen: true }
@@ -1529,7 +1557,7 @@ window.__ModuleLoader__.load({
     /** Text-like control shared by every settings field. */
     function controlStyle(focused, extra) {
       return {
-        boxSizing: 'border-box', height: 28, width: '100%', padding: '0 9px', borderRadius: 8,
+        boxSizing: 'border-box', height: CONTROL_HEIGHT, width: '100%', padding: '0 9px', borderRadius: 8,
         border: `1px solid ${focused ? 'color-mix(in srgb, var(--dsw-alias-label-primary) 45%, transparent)' : 'var(--dsw-alias-border-l2)'}`,
         background: 'var(--dsw-alias-interactive-bg-hover)', color: 'var(--dsw-alias-label-primary)',
         fontSize: 12, lineHeight: '18px', outline: 'none', fontFamily: 'inherit',
@@ -1548,6 +1576,7 @@ window.__ModuleLoader__.load({
         onBlur: () => setFocused(false),
         style: controlStyle(focused && !disabled, {
           ...(mono ? { fontFamily: CODE_FONT } : {}),
+          ...(inputMode === 'numeric' ? { fontVariantNumeric: 'tabular-nums' } : {}),
           ...(disabled ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
           ...style,
         }),
@@ -1599,7 +1628,7 @@ window.__ModuleLoader__.load({
     }
 
     /** One labelled row of the settings card; `hint` explains the effect in one line. */
-    function SettingRow({ label, hint, topDivider = false, compact = false, controlWidth = 240, singleLineHint = false, children }) {
+    function SettingRow({ label, hint, topDivider = false, compact = false, controlWidth = CONTROL_WIDTH.wide, singleLineHint = false, children }) {
       return h('div', {
         style: {
           display: 'grid',
@@ -1714,16 +1743,25 @@ window.__ModuleLoader__.load({
           role: isError ? 'alert' : 'status',
           style: {
             display: 'inline-flex', alignItems: isError ? 'flex-start' : 'center', gap: 6,
-            fontSize: 12, lineHeight: '17px', minWidth: 0, overflowWrap: 'anywhere',
+            flex: '0 1 auto', maxWidth: '100%', minWidth: 0,
+            padding: isError ? '4px 10px 4px 8px' : '3px 10px 3px 7px',
+            borderRadius: isError ? 9 : 999,
+            fontSize: 12, lineHeight: '17px', overflowWrap: 'anywhere',
+            background: isError
+              ? 'var(--dsw-alias-state-warn-tertiary)'
+              : 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent)',
+            border: `1px solid ${isError
+              ? 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 32%, transparent)'
+              : 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 32%, transparent)'}`,
             color: isError ? 'var(--dsw-alias-state-warn-label)' : 'var(--dsw-alias-state-success-primary)',
           },
         },
           h('span', {
             style: {
-              flex: 'none', marginTop: isError ? 1.5 : 0,
+              flex: 'none', display: 'inline-flex', marginTop: isError ? 1.5 : 0,
               color: isError ? 'var(--dsw-alias-state-warn-primary)' : 'var(--dsw-alias-state-success-primary)',
             },
-          }, glyph(isError ? WARNING_PARTS : CHECK_PARTS, 14, isError ? 1.25 : 1.5)),
+          }, glyph(isError ? WARNING_PARTS : CHECK_PARTS, 13, isError ? 1.25 : 1.5)),
           h('span', { style: { minWidth: 0 } }, notice.text),
         );
       }
@@ -1732,13 +1770,17 @@ window.__ModuleLoader__.load({
           role: 'status',
           style: {
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            fontSize: 12, lineHeight: '17px', minWidth: 0, overflowWrap: 'anywhere',
+            flex: '0 1 auto', maxWidth: '100%', minWidth: 0,
+            padding: '3px 10px 3px 7px', borderRadius: 999,
+            background: 'var(--dsw-alias-interactive-bg-hover)',
+            border: '1px solid var(--dsw-alias-border-l1)',
+            fontSize: 12, lineHeight: '17px', overflowWrap: 'anywhere',
             color: 'var(--dsw-alias-label-secondary)',
           },
         },
           h('span', {
-            style: { flex: 'none', color: 'var(--dsw-alias-label-tertiary)' },
-          }, glyph(INFO_PARTS, 14, 1.25)),
+            style: { flex: 'none', display: 'inline-flex', color: 'var(--dsw-alias-label-tertiary)' },
+          }, glyph(INFO_PARTS, 13, 1.25)),
           h('span', { style: { minWidth: 0 } }, t('settings.restartNote')),
         );
       }
@@ -1809,7 +1851,7 @@ window.__ModuleLoader__.load({
       },
         h('div', {
           style: {
-            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 240px)',
+            display: 'grid', gridTemplateColumns: `minmax(0, 1fr) minmax(0, ${CONTROL_WIDTH.wide}px)`,
             alignItems: 'center', gap: 14,
           },
         },
@@ -1847,7 +1889,7 @@ window.__ModuleLoader__.load({
         ),
         showManual ? h('div', {
           style: {
-            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8,
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: CONTROL_GAP,
             paddingTop: 8, borderTop: '1px solid var(--dsw-alias-border-l1)',
           },
         },
@@ -2015,10 +2057,13 @@ window.__ModuleLoader__.load({
         if (locked) return;
         const preset = options?.presets?.[presetId];
         if (preset === undefined) return;
+        // The Host owns the template each preset implies; a preset that omits it
+        // (an older Host) keeps the current template instead of inventing one.
+        const presetTemplate = typeof preset.template === 'string' && preset.template !== '' ? preset.template : null;
         patchDialog((now) => ({
           draft: {
             ...now.draft,
-            template: presetId === 'en' ? '[{date}] {type}: {topic}' : '[{date}][{type}] {topic}',
+            template: presetTemplate ?? now.draft.template,
             language: preset.language,
             cjkSpacing: preset.cjkSpacing,
             fallbackType: preset.fallbackType,
@@ -2148,7 +2193,7 @@ window.__ModuleLoader__.load({
             style: {
               position: 'relative',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              height: 28, padding: '0 8px', border: 0, borderRadius: 7,
+              height: CONTROL_HEIGHT, padding: '0 8px', border: 0, borderRadius: 7,
               fontSize: 12.5, lineHeight: '18px', fontWeight: selected ? 600 : 500,
               cursor: 'pointer', fontFamily: 'inherit',
               background: selected ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
@@ -2219,12 +2264,15 @@ window.__ModuleLoader__.load({
                 onChange: (value) => setField('language', value),
               })),
             h(SettingRow, { label: t('settings.topicLength'), hint: t('settings.topicLength.hint'), topDivider: true },
-              h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, width: '100%' } },
+              h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)', alignItems: 'center', gap: 6, width: '100%' } },
                 h(TextControl, {
                   value: String(draft.topicMinChars), inputMode: 'numeric', disabled: locked, ariaLabel: t('settings.topicMin'),
                   onChange: (value) => setField('topicMinChars', value),
                 }),
-                h('span', { 'aria-hidden': true, style: { color: 'var(--dsw-alias-label-tertiary)' } }, '–'),
+                h('span', {
+                  'aria-hidden': true,
+                  style: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, lineHeight: '18px' },
+                }, '-'),
                 h(TextControl, {
                   value: String(draft.topicMaxChars), inputMode: 'numeric', disabled: locked, ariaLabel: t('settings.topicMax'),
                   onChange: (value) => setField('topicMaxChars', value),
@@ -2254,13 +2302,12 @@ window.__ModuleLoader__.load({
         const canDelete = (index) => !locked && draftTypes.length > 2;
         return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
           h(SettingsSection, { title: t('settings.group.typePolicy') },
-            h(SettingRow, { label: t('settings.fallbackPolicy'), hint: t('settings.fallbackPolicy.detail'), controlWidth: 240, singleLineHint: true },
-              h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, width: '100%' } },
+            h(SettingRow, { label: t('settings.fallbackPolicy'), hint: t('settings.fallbackPolicy.detail'), singleLineHint: true },
+              h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', alignItems: 'center', gap: CONTROL_GAP, width: '100%' } },
                 h(SelectControl, {
                   value: draft.fallbackType, disabled: locked, ariaLabel: t('settings.fallbackType'),
                   options: fallbackTypeChoices.map((key) => ({ value: key, label: key })),
                   onChange: (value) => setField('fallbackType', value),
-                  style: { flex: 1, minWidth: 110 },
                 }),
                 h(SelectControl, {
                   value: draft.fallbackTruncation ?? 'natural', disabled: locked, ariaLabel: t('settings.fallbackTruncation'),
@@ -2269,7 +2316,6 @@ window.__ModuleLoader__.load({
                     { value: 'hard', label: t('settings.fallbackTruncation.hard') },
                   ],
                   onChange: (value) => setField('fallbackTruncation', value),
-                  style: { flex: 1, minWidth: 110 },
                 }),
               )),
           ),
@@ -2289,22 +2335,22 @@ window.__ModuleLoader__.load({
               style: { height: 22, padding: '0 8px', border: 0, borderRadius: 6, fontSize: 11.5, lineHeight: '16px', color: 'var(--dsw-alias-label-secondary)', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.5 : 1 },
             }, t('settings.types.restoreDefaults')),
           },
-              h('div', { style: { display: 'grid', gridTemplateColumns: TYPE_TABLE_GRID, alignItems: 'center', gap: 7, padding: '8px 0 4px', fontSize: 11, lineHeight: '15px', color: 'var(--dsw-alias-label-tertiary)' } },
+              h('div', { style: { display: 'grid', gridTemplateColumns: TYPE_TABLE_GRID, alignItems: 'center', gap: CONTROL_GAP, padding: '8px 0 4px', fontSize: 11, lineHeight: '15px', color: 'var(--dsw-alias-label-tertiary)' } },
               h('span', null, t('settings.types.colKey')),
               h('span', null, t('settings.types.colHint')),
-              h('span', { style: { textAlign: 'center' } }, t('settings.types.colProvisional')),
-              h('span', { style: { textAlign: 'center' } }, t('settings.types.colCount')),
-              h('span', { style: { textAlign: 'center' } }, t('settings.types.colRemove'))),
-            ...draftTypes.map((entry, index) => h('div', { key: index, style: { display: 'grid', gridTemplateColumns: TYPE_TABLE_GRID, alignItems: 'center', gap: 7, padding: '6px 0', borderTop: index === 0 ? 'none' : '1px solid var(--dsw-alias-border-l1)' } },
+              h('span', { style: { textAlign: 'center', whiteSpace: 'nowrap' } }, t('settings.types.colProvisional')),
+              h('span', { style: { textAlign: 'center', whiteSpace: 'nowrap' } }, t('settings.types.colCount')),
+              h('span', { style: { justifySelf: 'end', textAlign: 'right', whiteSpace: 'nowrap' } }, t('settings.types.colRemove'))),
+            ...draftTypes.map((entry, index) => h('div', { key: index, style: { display: 'grid', gridTemplateColumns: TYPE_TABLE_GRID, alignItems: 'center', gap: CONTROL_GAP, padding: '6px 0', borderTop: index === 0 ? 'none' : '1px solid var(--dsw-alias-border-l1)' } },
               h(TextControl, { value: entry.key, disabled: locked, placeholder: t('settings.types.keyPlaceholder'), ariaLabel: t('settings.types.keyAria', { index: index + 1 }), onChange: (value) => updateTypeRow(index, { key: value }) }),
               h(TextControl, { value: entry.hint, disabled: locked, placeholder: t('settings.types.hintPlaceholder'), ariaLabel: t('settings.types.hintAria', { index: index + 1 }), onChange: (value) => updateTypeRow(index, { hint: value }) }),
               h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center' } },
                 h(ToggleControl, { checked: entry.provisional === true, disabled: locked, ariaLabel: t('settings.types.provisionalAria', { key: entry.key || String(index + 1) }), onChange: (value) => updateTypePolicy(index, { provisional: value }) })),
-              h(TextControl, { value: entry.provisional === true ? String(entry.maxRefinements ?? values?.maxProvisionalRefinements ?? 4) : '', inputMode: 'numeric', disabled: locked || entry.provisional !== true, placeholder: '4', ariaLabel: t('settings.types.countAria', { key: entry.key || String(index + 1) }), style: { textAlign: 'center' }, onChange: (value) => updateTypePolicy(index, { maxRefinements: value }) }),
-              h(ActionButton, { onClick: () => removeTypeRow(index), disabled: !canDelete(index), 'aria-label': t('settings.types.removeAria', { key: entry.key || String(index + 1) }), hoverColor: 'var(--dsw-alias-label-primary)', style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, padding: 0, border: 0, borderRadius: 7, color: 'var(--dsw-alias-label-tertiary)', cursor: canDelete(index) ? 'pointer' : 'default', opacity: canDelete(index) ? 1 : 0.35 } }, glyph(CLOSE_PARTS, 11, 1.5)),
+              h(TextControl, { value: entry.provisional === true ? String(entry.maxRefinements ?? values?.maxProvisionalRefinements ?? DEFAULT_PROVISIONAL_LIMIT) : '', inputMode: 'numeric', disabled: locked || entry.provisional !== true, placeholder: entry.provisional === true ? '4' : '–', ariaLabel: t('settings.types.countAria', { key: entry.key || String(index + 1) }), style: { textAlign: 'center', padding: '0 6px' }, onChange: (value) => updateTypePolicy(index, { maxRefinements: value }) }),
+              h(ActionButton, { onClick: () => removeTypeRow(index), disabled: !canDelete(index), 'aria-label': t('settings.types.removeAria', { key: entry.key || String(index + 1) }), hoverColor: 'var(--dsw-alias-label-primary)', style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: CONTROL_WIDTH.icon, height: CONTROL_HEIGHT, padding: 0, border: 0, borderRadius: 8, color: 'var(--dsw-alias-label-tertiary)', cursor: canDelete(index) ? 'pointer' : 'default', opacity: canDelete(index) ? 1 : 0.35 } }, glyph(CLOSE_PARTS, 11, 1.5)),
             )),
             h('div', { style: { padding: '8px 0', borderTop: '1px solid var(--dsw-alias-border-l1)', display: 'flex', alignItems: 'center' } },
-              h(ActionButton, { onClick: addTypeRow, disabled: locked, style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', width: 96, gap: 5, height: 26, padding: '0 6px', borderRadius: 7, border: '1px dashed var(--dsw-alias-border-l2)', fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.5 : 1 } }, glyph(PLUS_PARTS, 12, 1.4), t('settings.types.add'))),
+              h(ActionButton, { onClick: addTypeRow, disabled: locked, style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', width: CONTROL_WIDTH.medium, gap: 5, height: CONTROL_HEIGHT, padding: '0 8px', borderRadius: 8, border: '1px dashed var(--dsw-alias-border-l2)', fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.5 : 1 } }, glyph(PLUS_PARTS, 12, 1.4), t('settings.types.add'))),
           ),
         );
       };
@@ -2384,7 +2430,7 @@ window.__ModuleLoader__.load({
 
       const renderBehaviorTab = () => h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
         h(SettingsSection, { title: t('settings.group.behavior') },
-          h(SettingRow, { label: t('settings.uiLanguage'), hint: t('settings.uiLanguage.hint') },
+          h(SettingRow, { label: t('settings.uiLanguage'), hint: t('settings.uiLanguage.hint'), controlWidth: CONTROL_WIDTH.medium },
             h(SelectControl, { value: draft.uiLanguage ?? 'auto', disabled: locked, ariaLabel: t('settings.uiLanguage'), options: [
               { value: 'auto', label: t('settings.uiLanguage.auto') },
               { value: 'zh', label: t('settings.uiLanguage.zh') },
@@ -2394,7 +2440,7 @@ window.__ModuleLoader__.load({
             h(ToggleControl, { checked: draft.subagentDelegationLabel !== false, disabled: locked, ariaLabel: t('settings.subagentDelegationLabel'), onChange: (value) => setField('subagentDelegationLabel', value) })),
           h(SettingRow, { label: t('settings.agentsInstructions'), hint: t('settings.agentsInstructions.hint'), topDivider: true, compact: true },
             h(ToggleControl, { checked: draft.agentsInstructions === true, disabled: locked, ariaLabel: t('settings.agentsInstructions'), onChange: (value) => setField('agentsInstructions', value) })),
-          h(SettingRow, { label: t('settings.agentsInstructionsMaxBytes'), hint: t('settings.agentsInstructionsMaxBytes.hint'), topDivider: true, controlWidth: 120 },
+          h(SettingRow, { label: t('settings.agentsInstructionsMaxBytes'), hint: t('settings.agentsInstructionsMaxBytes.hint'), topDivider: true, controlWidth: CONTROL_WIDTH.medium },
             h(TextControl, {
               value: String(draft.agentsInstructionsMaxBytes ?? ''), inputMode: 'numeric', disabled: locked,
               ariaLabel: t('settings.agentsInstructionsMaxBytes'),
@@ -2415,31 +2461,31 @@ window.__ModuleLoader__.load({
             collapseLabel: t('settings.section.collapse'),
           },
         },
-          h(SettingRow, { label: t('settings.maxInputBytes'), hint: t('settings.maxInputBytes.hint'), controlWidth: 120 },
+          h(SettingRow, { label: t('settings.maxInputBytes'), hint: t('settings.maxInputBytes.hint'), controlWidth: CONTROL_WIDTH.medium },
             h(TextControl, {
               value: String(draft.maxInputBytes ?? ''), inputMode: 'numeric', disabled: locked,
               ariaLabel: t('settings.maxInputBytes'),
               onChange: (value) => setField('maxInputBytes', value),
             })),
-          h(SettingRow, { label: t('settings.maxOutputTokens'), hint: t('settings.maxOutputTokens.hint'), topDivider: true, controlWidth: 120 },
+          h(SettingRow, { label: t('settings.maxOutputTokens'), hint: t('settings.maxOutputTokens.hint'), topDivider: true, controlWidth: CONTROL_WIDTH.medium },
             h(TextControl, {
               value: String(draft.maxOutputTokens ?? ''), inputMode: 'numeric', disabled: locked,
               ariaLabel: t('settings.maxOutputTokens'),
               onChange: (value) => setField('maxOutputTokens', value),
             })),
-          h(SettingRow, { label: t('settings.timeoutMs'), hint: t('settings.timeoutMs.hint'), topDivider: true, controlWidth: 120 },
+          h(SettingRow, { label: t('settings.timeoutMs'), hint: t('settings.timeoutMs.hint'), topDivider: true, controlWidth: CONTROL_WIDTH.medium },
             h(TextControl, {
               value: String(draft.timeoutMs ?? ''), inputMode: 'numeric', disabled: locked,
               ariaLabel: t('settings.timeoutMs'),
               onChange: (value) => setField('timeoutMs', value),
             })),
-          h(SettingRow, { label: t('settings.retryAttempts'), hint: t('settings.retryAttempts.hint'), topDivider: true, controlWidth: 120 },
+          h(SettingRow, { label: t('settings.retryAttempts'), hint: t('settings.retryAttempts.hint'), topDivider: true, controlWidth: CONTROL_WIDTH.medium },
             h(TextControl, {
               value: String(draft.retryAttempts ?? ''), inputMode: 'numeric', disabled: locked,
               ariaLabel: t('settings.retryAttempts'),
               onChange: (value) => setField('retryAttempts', value),
             })),
-          h(SettingRow, { label: t('settings.retryDelayMs'), hint: t('settings.retryDelayMs.hint'), topDivider: true, controlWidth: 120 },
+          h(SettingRow, { label: t('settings.retryDelayMs'), hint: t('settings.retryDelayMs.hint'), topDivider: true, controlWidth: CONTROL_WIDTH.medium },
             h(TextControl, {
               value: String(draft.retryDelayMs ?? ''), inputMode: 'numeric', disabled: locked,
               ariaLabel: t('settings.retryDelayMs'),
@@ -2461,7 +2507,7 @@ window.__ModuleLoader__.load({
         style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 34 },
       },
         h(FooterNotice, { notice, dirty, t }),
-        h('div', { style: { display: 'flex', gap: 8, flex: 'none' } },
+        h('div', { style: { display: 'flex', gap: CONTROL_GAP, flex: 'none' } },
           h(ActionButton, {
             onClick: () => patchDialog({
               draft: cloneDraft(values),
@@ -2471,7 +2517,7 @@ window.__ModuleLoader__.load({
             disabled: !dirty || saving === true,
             style: {
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              height: 28, minWidth: 56, padding: '0 12px', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 8,
+              height: CONTROL_HEIGHT, minWidth: CONTROL_WIDTH.buttonMin, padding: '0 12px', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 8,
               color: 'var(--dsw-alias-label-secondary)', fontSize: 12, cursor: dirty ? 'pointer' : 'default',
               opacity: dirty && saving !== true ? 1 : 0.45,
             },
@@ -2482,7 +2528,7 @@ window.__ModuleLoader__.load({
             hoverBackground: 'color-mix(in srgb, var(--dsw-alias-label-primary) 88%, transparent)',
             style: {
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              height: 28, minWidth: 68, padding: '0 14px', border: 0, borderRadius: 8, fontSize: 12, fontWeight: 600,
+              height: CONTROL_HEIGHT, minWidth: CONTROL_WIDTH.buttonMin, padding: '0 14px', border: 0, borderRadius: 8, fontSize: 12, fontWeight: 600,
               background: 'var(--dsw-alias-label-primary)', color: 'var(--dsw-alias-bg-layer-2)',
               cursor: canSave ? 'pointer' : 'default', opacity: canSave ? 1 : 0.4,
             },
@@ -2517,7 +2563,7 @@ window.__ModuleLoader__.load({
         iconKey: 'session-title-template.settings',
         closeLabel: t('dialog.close'),
         onClose: close,
-        width: 580,
+        width: 620,
         height: 'min(736px, calc(100% - 48px))',
         maxHeight: 'calc(100% - 48px)',
         subHeader,
@@ -3251,7 +3297,7 @@ window.__ModuleLoader__.load({
             'settings.section.expand': '展开',
             'settings.section.collapse': '收起',
             'settings.topicLength': '主题长度',
-            'settings.topicLength.hint': '最小 – 最大字宽',
+            'settings.topicLength.hint': '最小 - 最大字宽',
             'settings.topicMin': '主题最小字宽',
             'settings.topicMax': '主题最大字宽',
             'settings.cjkSpacing': '中英间距',
@@ -3265,7 +3311,7 @@ window.__ModuleLoader__.load({
             'settings.subagentRoute': '子代理',
             'settings.subagentRoute.hint': '子智能体生成或细化标题时使用，留空跟随主代理',
             'settings.fallbackRoute': '兜底',
-            'settings.fallbackRoute.hint': '主路由失败或历史补全缺少原模型时使用',
+            'settings.fallbackRoute.hint': '主路由缺失或失败时使用；不受「补写历史标题」开关影响',
             'settings.route.followSession': '跟随当前会话模型',
             'settings.route.followMain': '跟随主代理',
             'settings.route.none': '不启用兜底模型',
@@ -3285,7 +3331,7 @@ window.__ModuleLoader__.load({
             'settings.roleProbe': '端点指令探针',
             'settings.roleProbe.hint': '确认端点确实收到了指令块',
             'settings.backfill': '补写历史标题',
-            'settings.backfill.hint': '启动后自动为旧会话补齐模板标题（保留手动固定标题）',
+            'settings.backfill.hint': '启动后自动为旧会话补齐模板标题（保留手动重命名或固定的标题）',
             'settings.maxInputBytes': '输入字节上限',
             'settings.maxInputBytes.hint': '传给模型的上下文预算（256–1048576）',
             'settings.maxOutputTokens': '输出词元上限',
@@ -3296,7 +3342,7 @@ window.__ModuleLoader__.load({
             'settings.retryAttempts.hint': '每次生成的最大尝试轮数（1–5）',
             'settings.retryDelayMs': '重试间隔（毫秒）',
             'settings.retryDelayMs.hint': '失败后退避等待时间（0–10000）',
-            'settings.restartNote': '保存后将重载插件，进行中请求会取消',
+            'settings.restartNote': '保存后将重载插件，进行中请求会取消。',
             'settings.save': '保存',
             'settings.saving': '保存中…',
             'settings.reset': '还原',
@@ -3327,7 +3373,7 @@ window.__ModuleLoader__.load({
             'hover.pinnedNote': '自动命名不再覆盖',
             'hover.fallback': '临时回退标题',
             'hover.fallbackNote': '尚未生成正式标题',
-            'dialog.title': '会话标题状态',
+            'dialog.title': '查看状态',
             'dialog.close': '关闭',
             'dialog.loading': '正在读取命名状态…',
             'dialog.currentTitle': '当前标题',
@@ -3359,11 +3405,11 @@ window.__ModuleLoader__.load({
             'dialog.dateSource': '日期来源',
             'dialog.dateSourceValue': '会话创建时间 · {parts}',
             'dialog.topicLength': '主题长度',
-            'dialog.topicLengthValue': '{min}—{max} 字宽',
+            'dialog.topicLengthValue': '{min}-{max} 字宽',
             'dialog.types': '类型词表',
             'dialog.supplements': '补充规则',
             'dialog.probeLine': '探针结论：{verdict}',
-            'dialog.probe.supported': '开发者角色正常，该端点能读到对应指令块',
+            'dialog.probe.supported': '开发者角色正常，该端点能读到标题指令块',
             'dialog.probe.unsupported': '该端点丢弃了指令块，标题指令可能未送达',
           },
           en: {
@@ -3432,8 +3478,8 @@ window.__ModuleLoader__.load({
             'settings.fallbackPolicy': 'Fallback',
             'settings.fallbackTruncation': 'Truncation mode',
             'settings.fallbackTruncation.hint': 'Natural meaning or strict width limit',
-            'settings.fallbackTruncation.natural': 'Natural truncation',
-            'settings.fallbackTruncation.hard': 'Hard truncation',
+            'settings.fallbackTruncation.natural': 'Natural',
+            'settings.fallbackTruncation.hard': 'Hard',
             'settings.fallbackPolicy.hint': 'Temporary title without a model route',
             'settings.fallbackPolicy.detail': 'Natural or hard truncation without a model',
             'settings.types.tableHint': '',
@@ -3467,7 +3513,7 @@ window.__ModuleLoader__.load({
             'settings.section.expand': 'Expand',
             'settings.section.collapse': 'Collapse',
             'settings.topicLength': 'Topic length',
-            'settings.topicLength.hint': 'Min – max width',
+            'settings.topicLength.hint': 'Min - max width',
             'settings.topicMin': 'Minimum topic width',
             'settings.topicMax': 'Maximum topic width',
             'settings.cjkSpacing': 'CJK spacing',
@@ -3481,7 +3527,7 @@ window.__ModuleLoader__.load({
             'settings.subagentRoute': 'Subagent',
             'settings.subagentRoute.hint': 'Subagent model, follows main by default',
             'settings.fallbackRoute': 'Fallback',
-            'settings.fallbackRoute.hint': 'Used after route or backfill failure',
+            'settings.fallbackRoute.hint': 'Used when the main route is missing or fails; independent of the history backfill toggle',
             'settings.route.followSession': 'Follow current session model',
             'settings.route.followMain': 'Follow main agent',
             'settings.route.none': 'Disabled (no fallback model)',
@@ -3501,7 +3547,7 @@ window.__ModuleLoader__.load({
             'settings.roleProbe': 'Endpoint instruction probe',
             'settings.roleProbe.hint': 'Check that the endpoint receives the instruction block',
             'settings.backfill': 'Backfill past titles',
-            'settings.backfill.hint': 'Backfill older sessions after startup',
+            'settings.backfill.hint': 'Backfill older sessions after startup (manually renamed or pinned titles are kept)',
             'settings.maxInputBytes': 'Max input bytes',
             'settings.maxInputBytes.hint': 'Model context budget (256–1048576)',
             'settings.maxOutputTokens': 'Max output tokens',
@@ -3543,7 +3589,7 @@ window.__ModuleLoader__.load({
             'hover.pinnedNote': 'Automatic naming will not overwrite it',
             'hover.fallback': 'Temporary fallback title',
             'hover.fallbackNote': 'Not yet replaced by a generated title',
-            'dialog.title': 'Session title status',
+            'dialog.title': 'View status',
             'dialog.close': 'Close',
             'dialog.loading': 'Loading title status…',
             'dialog.currentTitle': 'Current title',
@@ -3575,11 +3621,11 @@ window.__ModuleLoader__.load({
             'dialog.dateSource': 'Date source',
             'dialog.dateSourceValue': 'Session creation time · {parts}',
             'dialog.topicLength': 'Topic length',
-            'dialog.topicLengthValue': '{min}–{max} width units',
+            'dialog.topicLengthValue': '{min}-{max} width units',
             'dialog.types': 'Type set',
             'dialog.supplements': 'Supplements',
             'dialog.probeLine': 'Probe verdict: {verdict}',
-            'dialog.probe.supported': 'Developer role works normally; endpoint reads the instruction block',
+            'dialog.probe.supported': 'Developer role works normally; the endpoint receives the title instruction block',
             'dialog.probe.unsupported': 'Endpoint dropped the instruction block; title rules may not reach the model',
           },
         };

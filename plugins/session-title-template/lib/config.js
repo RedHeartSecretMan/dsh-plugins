@@ -28,15 +28,23 @@ const ENGLISH_DEFAULT_TYPES = [
   { key: "research", hint: "Multi-source investigation, comparisons, benchmarks, deep analysis" },
 ];
 
-/** Built-in Chinese and English naming presets offered by the settings UI. */
+/**
+ * Built-in Chinese and English naming presets offered by the settings UI.
+ *
+ * The preset carries the template it implies so the Client never has to keep a
+ * second copy of "which template belongs to which language"; a preset applied
+ * from the form and one applied by the Host stay the same change.
+ */
 export const NAMING_PRESETS = Object.freeze({
   zh: Object.freeze({
+    template: "[{date}][{type}] {topic}",
     language: "zh",
     cjkSpacing: true,
     fallbackType: "探索",
     types: Object.freeze(DEFAULT_TYPES.map((entry) => Object.freeze({ ...entry }))),
   }),
   en: Object.freeze({
+    template: "[{date}] {type}: {topic}",
     language: "en",
     cjkSpacing: false,
     fallbackType: "explore",
@@ -60,6 +68,8 @@ export const DEFAULTS = {
   provider: undefined,
   model: undefined,
   subagentRoute: undefined,
+  /** Backup route for every title request, not only the backfill pass. */
+  fallbackRoute: undefined,
   subagentDelegationLabel: true,
   maxInputBytes: 4096,
   maxOutputTokens: 4096,
@@ -247,10 +257,16 @@ export function resolveConfig(config) {
 
   const backfillRaw = raw.backfill === undefined || raw.backfill === null ? {} : raw.backfill;
   if (typeof backfillRaw !== "object" || Array.isArray(backfillRaw)) invalid("backfill", "must be an object");
-  rejectUnknown(backfillRaw, ["enabled", "fallbackRoute", "retitle"], "backfill");
+  // The backup route serves every title request, so it lives at the top level.
+  // The old nested key is refused instead of silently ignored, or a profile that
+  // still carries it would believe it configured a route that no longer applies.
+  if (Object.hasOwn(backfillRaw, "fallbackRoute")) {
+    invalid("backfill.fallbackRoute", "moved to config.fallbackRoute; move the same { provider, model } object up one level");
+  }
+  rejectUnknown(backfillRaw, ["enabled", "retitle"], "backfill");
   const backfillEnabled = backfillRaw.enabled === undefined ? DEFAULTS.backfill.enabled : backfillRaw.enabled;
   if (typeof backfillEnabled !== "boolean") invalid("backfill.enabled", "must be a boolean");
-  const backfillRoute = normalizeRoute(backfillRaw.fallbackRoute, "backfill.fallbackRoute");
+  const fallbackRoute = normalizeRoute(raw.fallbackRoute, "fallbackRoute");
   const retitleEntries = backfillRaw.retitle === undefined
     ? []
     : normalizeRetitle(backfillRaw.retitle, "backfill.retitle");
@@ -279,6 +295,7 @@ export function resolveConfig(config) {
     provider: raw.provider === undefined ? undefined : requireString(raw.provider, "provider"),
     model: raw.model === undefined ? undefined : requireString(raw.model, "model"),
     subagentRoute,
+    fallbackRoute,
     subagentDelegationLabel,
     maxInputBytes: requireInteger(raw.maxInputBytes === undefined ? DEFAULTS.maxInputBytes : raw.maxInputBytes, "maxInputBytes", 256, 1048576),
     maxOutputTokens: requireInteger(raw.maxOutputTokens === undefined ? DEFAULTS.maxOutputTokens : raw.maxOutputTokens, "maxOutputTokens", 8, 4096),
@@ -293,7 +310,6 @@ export function resolveConfig(config) {
     }),
     backfill: Object.freeze({
       enabled: backfillEnabled,
-      ...(backfillRoute === undefined ? {} : { fallbackRoute: backfillRoute }),
       retitle: Object.freeze(retitleEntries.map((entry) => Object.freeze(entry))),
     }),
   });

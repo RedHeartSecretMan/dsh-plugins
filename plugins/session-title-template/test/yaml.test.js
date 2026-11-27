@@ -31,12 +31,12 @@ test('round-trips full plugin config including types, routes, retitle, and speci
     agentsInstructions: { enabled: true, maxBytes: 4096 },
     backfill: {
       enabled: true,
-      fallbackRoute: { provider: 'openai', model: 'gpt-4.1-mini' },
       retitle: [
         { id: 'session-1', hint: 'Keep API nouns: OAuth & SAML' },
         { id: 'session-2', hint: '' },
       ],
     },
+    fallbackRoute: { provider: 'openai', model: 'gpt-4.1-mini' },
   };
   const yaml = formatConfigYaml(sample);
   assert.ok(yaml.includes("template: '[{date}][{type}] {topic}'"), yaml);

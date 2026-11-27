@@ -151,9 +151,10 @@ describe("createInstructionReader", () => {
     const controller = new AbortController();
     let passedSignal;
     const read = createInstructionReader({ discover: async options => {
-      assert.deepEqual(Object.keys(options).sort(), ["cwd", "signal"]);
+      assert.deepEqual(Object.keys(options).sort(), ["cwd", "onDiagnostic", "signal"]);
       assert.equal(options.cwd, f.cwd);
       assert.ok(options.signal instanceof AbortSignal);
+      assert.equal(typeof options.onDiagnostic, "function");
       assert.equal(options.signal.aborted, false);
       passedSignal = options.signal;
       return [];
