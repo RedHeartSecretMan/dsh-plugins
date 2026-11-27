@@ -24,17 +24,28 @@ test('an empty line asks for status, so the bare command is useful', () => {
   assert.deepEqual(parseTitleCommand(undefined), { verb: 'status' });
 });
 
-test('an unknown verb is rejected with the accepted list', () => {
+test('an unknown verb is rejected with a 请用 hint, like the pin prompt', () => {
   const parsed = parseTitleCommand('frobnicate');
   assert.equal(parsed.error, 'unknown-verb');
+  assert.match(parsed.message, /^请用 \/title/u);
   assert.match(parsed.message, /status/u);
   assert.match(parsed.message, /refresh/u);
+  assert.match(parsed.message, /frobnicate/u);
 });
 
 test('pin without a title is rejected', () => {
   const parsed = parseTitleCommand('pin');
   assert.equal(parsed.error, 'pin-needs-title');
-  assert.match(parsed.message, /pin/u);
+  assert.equal(parsed.message, '请用 /title pin <完整标题>');
+});
+
+test('a verb that takes no input rejects a stray argument instead of ignoring it', () => {
+  for (const [line, verb] of [['refresh now', 'refresh'], ['auto please', 'auto'], ['status all', 'status']]) {
+    const parsed = parseTitleCommand(line);
+    assert.equal(parsed.error, 'unexpected-argument', line);
+    assert.match(parsed.message, /^请用 \/title /u, line);
+    assert.ok(parsed.message.includes(`/title ${verb}`), line);
+  }
 });
 
 test('the status text names the built-in rules and the supplements separately', () => {

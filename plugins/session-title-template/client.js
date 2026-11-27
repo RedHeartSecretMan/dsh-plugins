@@ -1815,6 +1815,10 @@ window.__ModuleLoader__.load({
 
     /** Lead-ins that only repeat the verb already shown as a chip. */
     const SUMMARY_LEAD_INS = [
+      /^新标题：/u,
+      /^已固定：/u,
+      /^已恢复自动命名：/u,
+      // Older rows keep their phrasing; a stored transcript still renders.
       /^会话标题已固定：/u,
       /^会话标题已重新生成：/u,
       /^已恢复自动命名，新标题：/u,
@@ -1889,7 +1893,9 @@ window.__ModuleLoader__.load({
       const summary = outcome === null
         ? t('command.running')
         : text !== undefined ? commandSummary(text, verb) : state === 'error' ? t('command.failed') : t('command.done');
-      const body = typeof text === 'string' && text.includes('\n') ? text : null;
+      // Every settled row can show the command's own output; the collapsed line
+      // is only a summary of it.
+      const body = typeof text === 'string' && text.trim() !== '' ? text : null;
       const copyable = typeof text === 'string' && text.trim() !== '';
 
       const statusPaint = state === 'error'

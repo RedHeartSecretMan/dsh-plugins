@@ -91,7 +91,7 @@ async function run(parsed, session, signal, deps) {
     }
     return {
       kind: 'success',
-      text: `会话标题已固定：${actual.title}\n自动命名不再覆盖。用 /title auto 恢复自动命名。`,
+      text: `已固定：${actual.title}\n自动命名不再覆盖；用 /title auto 可恢复自动命名。`,
     };
   }
   // refresh and auto both regenerate; auto exists so the intent is explicit.
@@ -100,7 +100,7 @@ async function run(parsed, session, signal, deps) {
     return { kind: 'error', text: '会话还没有可用于生成标题的用户消息。' };
   }
   if (parsed.verb === 'auto') {
-    return { kind: 'success', text: `已恢复自动命名，新标题：${title.title}` };
+    return { kind: 'success', text: `已恢复自动命名：${title.title}` };
   }
-  return { kind: 'success', text: `会话标题已重新生成：${title.title}` };
+  return { kind: 'success', text: `新标题：${title.title}` };
 }

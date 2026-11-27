@@ -32,14 +32,23 @@ export function parseTitleCommand(rawInput) {
   if (!VERBS.includes(verb)) {
     return {
       error: 'unknown-verb',
-      message: `未知的 /title 子命令：${verb}。可用：${VERBS.join('、')}`,
+      message: `请用 /title status、refresh、auto 或 /title pin <完整标题>；「${verb}」不是可用的子命令。`,
     };
   }
-  if (verb !== 'pin') return { verb };
-  if (rest === '') {
-    return { error: 'pin-needs-title', message: '请用 /title pin <完整标题>' };
+  if (verb === 'pin') {
+    if (rest === '') {
+      return { error: 'pin-needs-title', message: '请用 /title pin <完整标题>' };
+    }
+    return { verb, title: rest };
   }
-  return { verb, title: rest };
+  // The other verbs take no input; silently ignoring arguments would hide a typo.
+  if (rest !== '') {
+    return {
+      error: 'unexpected-argument',
+      message: `请用 /title ${verb}（该子命令不接受参数）；「${rest}」是多余的。`,
+    };
+  }
+  return { verb };
 }
 
 /**

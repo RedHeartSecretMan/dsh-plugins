@@ -18,7 +18,8 @@
 | 命名设置路由 | owner 鉴权的 `GET`/`POST /session-title-template/settings`：仅接受扁平白名单字段，保存前用 `resolveConfig` 校验，经 `configEditor.edit(ctx.fiber.entry, …)` 持久化，不直接改写 `cordis.patch.yml`；无有效变化时不写盘，保存中拒绝并发保存，被高层覆盖或无法寻址的条目分别返回 `config-overridden` / `editor-unavailable`，错误不泄漏异常正文 |
 | owner 鉴权回退 | 请求未带 Peer 参数时（Harness 0.2.2 的 `handler(req, res)` 调用方式）回退到环回信任判定：`127.0.0.1`/`::1` 等文本环回来源被接受，非环回来源仍返回 403；Peer 存在时只按 Peer 判定，回退不参与 |
 | HTTP 状态与刷新路由 | owner 鉴权的 `GET /session-title-template/status`（同时支持活会话与经 `sessionQuery` 只读的冷会话）与 `POST /session-title-template/refresh`（活会话无痕刷新），不向对话流追加命令块，错误分类返回且不泄漏异常正文 |
-| `/title` 命令卡片 | 通过 `conversation.chat.commandview` 以 `title` 为键接管该命令的行渲染：动词片（`status`/`refresh`/`pin`/`auto`）区分四种操作，对勾/警告/圆点表示结局，折叠行只显示一行摘要（`status` 取当前标题行，其余去掉重复动词的前缀），多行输出在展开区按宿主命令卡样式呈现，复制动作写入完整 `text`；单行结果不产生展开区；无 DOM 环境下复制静默失败而不抛错 |
+| `/title` 命令卡片 | 通过 `conversation.chat.commandview` 以 `title` 为键接管该命令的行渲染：动词片（`status`/`refresh`/`pin`/`auto`）区分四种操作，对勾/警告/圆点表示结局，折叠行只显示一行摘要（`status` 取当前标题行，其余去掉重复动词的前缀），**每个已结算的行都可展开**并在展开区按宿主命令卡样式呈现完整 `text`，复制动作同样写入完整 `text`；运行中的行没有展开区；无 DOM 环境下复制静默失败而不抛错 |
+| `/title` 命令语法 | 空行等价 `status`；未知子命令、`status`/`refresh`/`auto` 的多余参数、以及 `pin` 缺标题都返回「请用 /title …」形式的提示，而不是静默忽略参数 |
 | 失败诊断 | `title-call-failed` 只记录 `route`、`attempt n/总数`、provider 错误码和本地失败类别；不写标题、提示词、响应或原始错误文本 |
 | 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含 currentTitle anchor、转义和包装；优先保留首条和最新消息 |
 | 配置 | 字段、路由成对、词表和占位符校验；拒绝未知字段和已移除的旧别名 `maxExploreRefinements` / 顶层 `retitle`；`backfill.fallbackRoute` 被拒绝并提示迁移到顶层 `fallbackRoute`（该兜底路由服务于全部标题请求，与 `backfill.enabled` 无关）；`uiLanguage` 仅接受 `auto`/`zh`/`en`，`fallbackTruncation` 仅接受 `natural`/`hard`，`subagentRoute` 为成对 `{ provider, model }`，`subagentDelegationLabel` 仅接受 boolean，`types[].maxRefinements` 仅在接受 `provisional: true` 时生效且为 `1` 至 `100` 整数；`agentsInstructions` 仅接受 boolean `enabled` 和 `256` 至 `65536` 整数 `maxBytes`，解析结果独立冻结 |
@@ -33,7 +34,7 @@
 | 状态与卸载 | 结构化诊断写入 `diagnostics.jsonl`（有界、逐字段截断）； 按 profile 隔离；原子写入和有界锁等待；错误后队列可恢复；卸载取消定时器并等待维护退出 |
 | 命名与资源 | 包名为 `@redheartsecretman/session-title-template`，插件 id 与包名一致；显示名称由 locale 提供为“会话标题模板”；发布包包含全部运行资源 |
 
-单元与回归测试共 369 项，另加 32 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、只读状态与无痕刷新路由、命名设置与零依赖 YAML 读写、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
+单元与回归测试共 370 项，另加 32 项 Client 检查，使用隔离临时目录，覆盖 AGENTS 指令片段、配置边界、标题解析与截断边界、工具参数、命令语法、只读状态与无痕刷新路由、命名设置与零依赖 YAML 读写、投影折叠、历史维护两阶段和状态并发；状态测试包含两个真实子进程并发写入。运行 `npm test` 获取当前结果（它同时运行 `scripts/verify-client.mjs`），`npm run check` 对所有入口和脚本执行语法检查。
 
 `scripts/verify-client.mjs` 按 Web carrier 的方式加载 `client.js`：用 React 替身执行模块注册，然后检查插件导出的 `inject`、行尾/悬浮/弹窗与插件详情配置（`plugins.bundle.config`）四个 UI slot 与五个自有图标 key 的注册、原生 `contextMenus` 贡献（含 `observe` 响应订阅、`target: 'session'` 与「会话标题 ›」四子项结构）、中英词典键集一致、固定标题走 Session 引用而非不存在的 `sessions.rename` 且在已固定或尚无标题时禁用、固定当前与行尾已固定图标共用四角框定星芒图标而非复用置顶会话的图钉、悬浮窗使用 hovercard 语义色 token 且空状态不渲染、点击查看状态优先走只读 HTTP 路由直接消费结构化 `snapshot`（支持冷会话与英文全量本地化，结构化错误不误回落，切页或关闭时中止在飞请求，回落文本解析器不误判以 `来源：` 开头的标题）、点击自动生成优先走无痕 `POST` 刷新路由并直接提示详细结果与错误、四 Tab 命名设置弹窗（实时预览、格式/类型词表/主与兜底模型选择/行为与折叠高级参数、仅修改时展示的底栏重载提醒、非法数值与 Host 校验提示、只读与路由缺失处理、插件重启丢回复时的深度相等回读确认），以及插件详情页 YAML 编辑器（加载、展开完整配置、语法错误提示、保存、二次确认恢复默认与只读状态）。它验证形状与注册，不验证视觉呈现；真实 GUI 渲染仍需在本机核对。
 

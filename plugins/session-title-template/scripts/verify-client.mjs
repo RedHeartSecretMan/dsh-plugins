@@ -1187,16 +1187,20 @@ check('a /title card summarises the report and offers copy plus an expandable bo
   // Copying without a DOM must fail quietly instead of throwing into the transcript.
   await copy.props.onClick({ stopPropagation() {} });
   const oneLine = expand(view.component({
-    node: { ...node, args: 'pin 示例标题', outcome: { kind: 'success', text: '会话标题已固定：示例标题' } },
+    node: { ...node, args: 'pin 示例标题', outcome: { kind: 'success', text: '已固定：示例标题\n自动命名不再覆盖；用 /title auto 可恢复自动命名。' } },
   }));
-  if (findElement(oneLine, n => n.type === 'pre').length !== 0) {
-    throw new Error('a single-line result stays a single row');
-  }
+  // Every settled row can reveal the command's own output, not only the long ones.
+  const header = findElement(oneLine, n => n.type === 'div' && typeof n.props?.onClick === 'function')[0];
+  if (header === undefined) throw new Error('every settled row must offer the expand toggle');
   // The verb the invocation used is the chip, so four operations never read alike.
   if (!textOf(oneLine).includes('pin')) throw new Error('a pin invocation must show its own verb chip');
   if (!textOf(oneLine).includes('示例标题')) throw new Error('a pin result summarises the pinned title without the lead-in');
-  if (textOf(oneLine).includes('会话标题已固定：')) {
+  if (textOf(oneLine).includes('已固定：')) {
     throw new Error('the summary repeats a lead-in the verb chip already states');
+  }
+  const running = expand(view.component({ node: { ...node, args: 'refresh', outcome: null } }));
+  if (findElement(running, n => n.type === 'div' && typeof n.props?.onClick === 'function').length !== 0) {
+    throw new Error('a running row has no output yet, so it must not offer the toggle');
   }
 });
 
