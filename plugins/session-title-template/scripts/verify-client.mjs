@@ -216,6 +216,7 @@ check('apply registers the row slots, the native menu, its icons and the diction
   const owners = registrations.map(entry => entry.options.name).sort();
   const expected = [
     'contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon', 'contextMenu.icon',
+    'conversation.chat.commandview',
     'plugins.bundle.config',
     'shell.overlay', 'shell.overlay',
     'sidebar.session.row.hover', 'sidebar.session.row.trailing',
@@ -1151,6 +1152,45 @@ check('naming settings aligns control width tiers, vocabulary columns, and modal
   if (uiLangRow.length !== 1) {
     throw new Error('uiLanguage on behavior tab must align with the 120px column tier');
   }
+});
+
+check('a /title card summarises the report and offers copy plus an expandable body', async () => {
+  const { exported } = await loadClient();
+  const { ctx, registrations } = createContext();
+  exported.apply(ctx);
+  const view = registrations.find(entry => entry.options.name === 'conversation.chat.commandview');
+  if (view === undefined) throw new Error('the title command must own a conversation.chat.commandview row');
+  if (view.options.key !== 'title') throw new Error(`the row must key on the title command, got ${view.options.key}`);
+  const report = [
+    '命名规则：内置规则 + 1 个补充来源',
+    '内置规则',
+    '  标题格式    [{date}][{type}] {topic}',
+    '当前标题',
+    '  [1126][优化] 命名插件补写配置与界面调整',
+    '  来源：自动生成',
+    '  状态：未固定',
+    '探针结论：开发者角色正常，该端点能读到标题指令块',
+  ].join('\n');
+  const node = { kind: 'command', name: 'title', args: 'status', outcome: { kind: 'success', text: report } };
+  const collapsed = expand(view.component({ node }));
+  const summary = findElement(collapsed, n => n.type === 'span'
+    && n.props?.title === '[1126][优化] 命名插件补写配置与界面调整');
+  if (summary.length !== 1) throw new Error('the collapsed row must summarise with the title line, not the whole report');
+  if (findElement(collapsed, n => n.type === 'pre').length !== 0) {
+    throw new Error('the report body must start collapsed');
+  }
+  const expandBtn = findElement(collapsed, n => n.type === 'button' && n.props['aria-label'] === 'command.expand')[0];
+  if (expandBtn === undefined) throw new Error('the row must offer an expand action for the multi-line report');
+  expandBtn.props.onClick();
+  const copy = findElement(collapsed, n => n.type === 'button' && n.props['aria-label'] === 'command.copy')[0];
+  if (copy === undefined) throw new Error('the row must offer a copy action');
+  // Copying without a DOM must fail quietly instead of throwing into the transcript.
+  await copy.props.onClick();
+  const oneLine = expand(view.component({ node: { ...node, outcome: { kind: 'success', text: '会话标题已固定：示例标题' } } }));
+  if (findElement(oneLine, n => n.type === 'pre').length !== 0) {
+    throw new Error('a single-line result stays a single row');
+  }
+  if (!textOf(oneLine).includes('会话标题已固定：示例标题')) throw new Error('a single-line result is shown as its own summary');
 });
 
 check('plugin detail YAML editor loads, expands full config, validates syntax, saves and resets cleanly', async () => {
