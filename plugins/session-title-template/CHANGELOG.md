@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.2.1 — Unreleased
+## 0.2.1 — 2026-11-27
 
-> Candidate for `0.2.1` on `main` (not yet tagged or released). It keeps a patch number while carrying two breaking changes (`fallbackRoute` moved, `/title auto` removed) — deliberate for a single-user 0.x plugin under active iteration where both changes were reviewed and accepted together, leaving `0.3.0` for the next functional batch.
+> Keeps a patch number while carrying two breaking changes (`fallbackRoute` moved, `/title auto` removed) — deliberate for a single-user 0.x plugin under active iteration where both changes were reviewed and accepted together, leaving `0.3.0` for the next functional batch.
 
 - Add a four-tab **Naming settings** modal under the `Session title ›` submenu (available on both cold and live sessions):
   - **Format** tab with a live title preview, `template`, `language`, `topicMinChars`–`topicMaxChars`, `cjkSpacing`, `dateFormat`, and `timezone`.
