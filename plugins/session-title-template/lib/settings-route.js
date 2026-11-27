@@ -125,9 +125,10 @@ function respondSaveFailure(res, error, state, message) {
  * @param ctx - Cordis context providing `webServer` and `effect`.
  * @param deps - Active resolved `config`, its `rawConfig`, optional `llm`
  * service for model discovery, a `getEditor` lookup returning `{ editor, entry }`
- * (either may be absent), and the diagnostic `state`.
+ * (either may be absent), a `getStale` lookup naming a Host module newer than
+ * this process, and the diagnostic `state`.
  */
-export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, state }) {
+export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, getStale, state }) {
   if (typeof ctx.webServer?.register !== 'function') return;
   let saving = false;
   const activeRaw = rawConfig ?? {};
@@ -146,9 +147,14 @@ export function registerSettingsRoute(ctx, { config, rawConfig, llm, getEditor, 
 
       if (req.method === 'GET') {
         const models = await loadModelCatalog(llm ?? ctx.get?.('llm'));
+        // A Host module newer than this process means the form would edit code
+        // the running plugin does not contain; the dialog says so instead of
+        // letting a save look ineffective.
+        const stale = typeof getStale === 'function' ? getStale() : undefined;
         sendJson(res, 200, {
           editable,
           ...(editable ? {} : { reason: 'editor-unavailable' }),
+          ...(typeof stale === 'string' && stale !== '' ? { staleModule: stale } : {}),
           ...snapshotPayload(activeRaw, config),
           options: settingsOptions(config, models),
         });

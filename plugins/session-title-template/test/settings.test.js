@@ -26,11 +26,11 @@ function createMockResponse() {
 const owner = { principal: { kind: 'owner' } };
 const json = { 'content-type': 'application/json' };
 
-function setup({ raw = {}, editor, llm, entry = { options: { id: 'session-title-template' } } } = {}) {
+function setup({ raw = {}, editor, llm, getStale, entry = { options: { id: 'session-title-template' } } } = {}) {
   const routes = [];
   const ctx = { webServer: { register(route) { routes.push(route); return () => {}; } }, effect() {} };
   const config = resolveConfig(raw);
-  registerSettingsRoute(ctx, { config, rawConfig: raw, llm, getEditor: () => ({ editor, entry }) });
+  registerSettingsRoute(ctx, { config, rawConfig: raw, llm, getStale, getEditor: () => ({ editor, entry }) });
   return { handler: routes[0].handler, route: routes[0], config };
 }
 
@@ -328,6 +328,12 @@ test('the settings route is owner-only and reports editability, values, models a
   assert.ok(body.yaml.includes('language: zh'));
   assert.ok(body.fullYaml.includes('maxOutputTokens: 4096'));
   assert.equal(ok.headers.get('cache-control'), 'no-store');
+  assert.equal('staleModule' in body, false, 'a current process reports no stale module');
+
+  const staleRoute = setup({ editor: { edit: async () => {} }, getStale: () => 'lib/commands.js' });
+  const staleRes = createMockResponse();
+  await staleRoute.handler({ method: 'GET' }, staleRes, owner);
+  assert.equal(staleRes.json().staleModule, 'lib/commands.js', 'a newer Host module is reported to the form');
 
   const noEditor = setup({});
   const unavailable = createMockResponse();

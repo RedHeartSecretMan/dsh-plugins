@@ -1444,6 +1444,9 @@ window.__ModuleLoader__.load({
           store.set({
             requestId, loading: false, error: null, saving: false, notice: null,
             editable: payload.editable === true,
+            // A Host module newer than this process: saving would edit code the
+            // running plugin never loaded, so the form says so up front.
+            staleModule: typeof payload.staleModule === 'string' ? payload.staleModule : null,
             values: cloneDraft(payload.values),
             draft: cloneDraft(payload.values),
             options: payload.options ?? {},
@@ -2152,6 +2155,28 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * Warning shown when the Host half on disk is newer than the running process.
+     *
+     * The Client half reloads on every edit, so a Host-only change looks like it
+     * "did nothing": the form would save code this process never loaded. Stating
+     * the mismatch, with the module that changed, is cheaper than guessing.
+     */
+    function StaleHostBanner({ t }) {
+      return h('div', {
+        role: 'alert',
+        style: {
+          display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 10,
+          background: 'var(--dsw-alias-state-warn-tertiary)',
+          border: '1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent)',
+          color: 'var(--dsw-alias-label-primary)', fontSize: 12, lineHeight: '18px',
+        },
+      },
+        h('span', { style: { color: 'var(--dsw-alias-state-warn-primary)', marginTop: 1 } }, glyph(WARNING_PARTS, 16)),
+        h('span', null, t('settings.staleHost')),
+      );
+    }
+
     /** Four-tab naming settings modal rendered in `shell.overlay`. */
     function TitleSettingsDialog({ store, t, sync, uiLanguage }) {
       useUiLanguage(uiLanguage);
@@ -2171,7 +2196,7 @@ window.__ModuleLoader__.load({
       if (!open) return null;
 
       const {
-        loading, error, values, draft, options, editable, saving, notice,
+        loading, error, values, draft, options, editable, saving, notice, staleModule = null,
         activeTab = 'format',
         provisionalOpen = false,
         typesOpen = false,
@@ -2716,6 +2741,7 @@ window.__ModuleLoader__.load({
       );
 
       const form = () => h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+        staleModule === null ? null : h(StaleHostBanner, { t }),
         editable === true ? null : h(ReadOnlyBanner, { t }),
         activeTab === 'format' ? renderFormatTab()
           : activeTab === 'types' ? renderTypesTab()
@@ -3445,6 +3471,7 @@ window.__ModuleLoader__.load({
             'settings.loading': '正在读取设置…',
             'settings.loadFailed': '读取命名设置失败',
             'settings.needsReload': '设置接口不可用：请重启 DSH 使新版插件生效后再试。',
+            'settings.staleHost': '插件代码已更新，但当前进程仍在用旧版本；重启 DSH 后这里的修改才会按新代码生效。',
             'settings.editorUnavailable': '当前 profile 无法保存插件配置，可在 cordis.patch.yml 中手动修改。',
             'settings.tab.format': '格式',
             'settings.tab.types': '类型',
@@ -3668,6 +3695,7 @@ window.__ModuleLoader__.load({
             'settings.loading': 'Loading settings…',
             'settings.loadFailed': 'Could not read the naming settings',
             'settings.needsReload': 'The settings route is unavailable: restart DSH so the new plugin version takes effect, then try again.',
+            'settings.staleHost': 'The plugin code on disk is newer than this process; restart DSH so these changes run on the new code.',
             'settings.editorUnavailable': 'This profile cannot save plugin configuration; edit cordis.patch.yml by hand instead.',
             'settings.tab.format': 'Format',
             'settings.tab.types': 'Types',

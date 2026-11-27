@@ -13,6 +13,7 @@ import { titleStateProjectionDefinition } from './lib/projection.js';
 import { registerTitleCommands } from './lib/commands.js';
 import { registerStatusRoute } from './lib/status-route.js';
 import { registerSettingsRoute } from './lib/settings-route.js';
+import { hostStaleness, processStartedAt } from './lib/build-info.js';
 
 export const name = 'session-title-template';
 export const inject = ['sessionTitle', 'llm', 'sessions', 'sessionProjections'];
@@ -23,6 +24,9 @@ const DISPOSE_PROBE_GRACE_MS = 1500;
 export async function apply(ctx, rawConfig) {
   const config = resolveConfig(rawConfig);
   const lifetime = new AbortController();
+  // Frozen once: a Host module newer than this instant means the profile holds
+  // code this process never loaded.
+  const startedAt = processStartedAt(Date.now(), process.uptime());
   const profileDirectory = ctx.get?.('profileContext')?.dir;
   const state = createStateStore({ directory: stateDirectory({ ...process.env, ...(profileDirectory ? { DSH_PROFILE_DIR: profileDirectory } : {}) }) });
   const pattern = compileTitlePattern(config.template, config.types.map(type => type.key));
@@ -201,6 +205,8 @@ export async function apply(ctx, rawConfig) {
       rawConfig,
       llm: ctx.llm,
       state,
+      // Re-read on every request so an edit made while the dialog is open shows up.
+      getStale: () => hostStaleness({ startedAt }),
       getEditor: () => {
         const editor = ctx.get?.('configEditor');
         const entry = ctx.fiber?.entry;
