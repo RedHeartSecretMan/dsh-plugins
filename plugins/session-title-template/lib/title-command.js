@@ -37,7 +37,7 @@ export function parseTitleCommand(rawInput) {
   }
   if (verb !== 'pin') return { verb };
   if (rest === '') {
-    return { error: 'pin-needs-title', message: '用法：/title pin <完整标题>' };
+    return { error: 'pin-needs-title', message: '请用 /title pin <完整标题>' };
   }
   return { verb, title: rest };
 }
