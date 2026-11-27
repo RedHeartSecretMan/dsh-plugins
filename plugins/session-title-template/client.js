@@ -1833,11 +1833,14 @@ window.__ModuleLoader__.load({
      *
      * @param text - The settled command output.
      * @param verb - The invocation's verb.
+     * @param t - Translator, used for the usage-error label.
      * @returns The line worth reading in the collapsed row.
      */
-    function commandSummary(text, verb) {
+    function commandSummary(text, verb, t) {
       const lines = String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
       if (lines.length === 0) return '';
+      // A usage hint is the body's job; the collapsed row only needs its kind.
+      if (lines[0].startsWith('请用 /title')) return t('command.usage');
       if (verb === 'status') {
         const heading = lines.indexOf('当前标题');
         const titled = heading === -1 ? undefined : lines[heading + 1];
@@ -1892,17 +1895,11 @@ window.__ModuleLoader__.load({
       const state = outcome === null ? 'running' : outcome.kind === 'error' ? 'error' : 'ok';
       const summary = outcome === null
         ? t('command.running')
-        : text !== undefined ? commandSummary(text, verb) : state === 'error' ? t('command.failed') : t('command.done');
+        : text !== undefined ? commandSummary(text, verb, t) : state === 'error' ? t('command.failed') : t('command.done');
       // Every settled row can show the command's own output; the collapsed line
       // is only a summary of it.
       const body = typeof text === 'string' && text.trim() !== '' ? text : null;
       const copyable = typeof text === 'string' && text.trim() !== '';
-
-      const statusPaint = state === 'error'
-        ? { parts: WARNING_PARTS, color: 'var(--dsw-alias-state-warn-primary)' }
-        : state === 'ok'
-          ? { parts: CHECK_PARTS, color: 'var(--dsw-alias-state-success-primary)' }
-          : undefined;
 
       const onCopy = () => {
         void copyText(String(text)).then((ok) => {
@@ -1938,18 +1935,6 @@ window.__ModuleLoader__.load({
               opacity: body === null ? 0 : 1,
             },
           }, glyph(expanded ? CHEVRON_DOWN_PARTS : CHEVRON_RIGHT_PARTS, 12, 1.4)),
-          statusPaint === undefined
-            ? h('span', {
-              'aria-hidden': true,
-              style: {
-                width: 7, height: 7, borderRadius: '50%', flex: 'none',
-                background: 'var(--dsw-alias-label-tertiary)',
-              },
-            })
-            : h('span', {
-              'aria-hidden': true,
-              style: { display: 'inline-flex', flex: 'none', color: statusPaint.color },
-            }, glyph(statusPaint.parts, 12, 1.5)),
           h('span', {
             style: {
               flex: 'none', fontWeight: 400,
@@ -1977,7 +1962,12 @@ window.__ModuleLoader__.load({
             title: summary,
             style: {
               flex: '1 1 auto', minWidth: 0,
-              color: state === 'error' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)',
+              // Colour alone carries the outcome: no per-row state icon.
+              color: state === 'error'
+                ? 'var(--dsw-alias-state-error-primary)'
+                : state === 'ok'
+                  ? 'var(--dsw-alias-state-success-primary)'
+                  : 'var(--dsw-alias-label-tertiary)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             },
           }, summary),
@@ -3661,6 +3651,7 @@ window.__ModuleLoader__.load({
             'dialog.probe.unsupported': '该端点丢弃了指令块，标题指令可能未送达',
             'command.running': '正在生成…',
             'command.failed': '执行失败',
+            'command.usage': '用法错误',
             'command.done': '已完成',
             'command.copy': '复制',
             'command.copied': '已复制',
@@ -3885,6 +3876,7 @@ window.__ModuleLoader__.load({
             'dialog.probe.unsupported': 'Endpoint dropped the instruction block; title rules may not reach the model',
             'command.running': 'Generating…',
             'command.failed': 'Failed',
+            'command.usage': 'Usage error',
             'command.done': 'Done',
             'command.copy': 'Copy',
             'command.copied': 'Copied',

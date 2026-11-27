@@ -18,7 +18,7 @@
 | 命名设置路由 | owner 鉴权的 `GET`/`POST /session-title-template/settings`：仅接受扁平白名单字段，保存前用 `resolveConfig` 校验，经 `configEditor.edit(ctx.fiber.entry, …)` 持久化，不直接改写 `cordis.patch.yml`；无有效变化时不写盘，保存中拒绝并发保存，被高层覆盖或无法寻址的条目分别返回 `config-overridden` / `editor-unavailable`，错误不泄漏异常正文 |
 | owner 鉴权回退 | 请求未带 Peer 参数时（Harness 0.2.2 的 `handler(req, res)` 调用方式）回退到环回信任判定：`127.0.0.1`/`::1` 等文本环回来源被接受，非环回来源仍返回 403；Peer 存在时只按 Peer 判定，回退不参与 |
 | HTTP 状态与刷新路由 | owner 鉴权的 `GET /session-title-template/status`（同时支持活会话与经 `sessionQuery` 只读的冷会话）与 `POST /session-title-template/refresh`（活会话无痕刷新），不向对话流追加命令块，错误分类返回且不泄漏异常正文 |
-| `/title` 命令卡片 | 通过 `conversation.chat.commandview` 以 `title` 为键接管该命令的行渲染：动词片（`status`/`refresh`/`pin`）区分三种操作，对勾/警告/圆点表示结局，折叠行只显示一行摘要（`status` 取当前标题行，其余去掉重复动词的前缀），**每个已结算的行都可展开**并在展开区按宿主命令卡样式呈现完整 `text`，复制动作同样写入完整 `text`；运行中的行没有展开区；无 DOM 环境下复制静默失败而不抛错 |
+| `/title` 命令卡片 | 通过 `conversation.chat.commandview` 以 `title` 为键接管该命令的行渲染：动词片（`status`/`refresh`/`pin`）区分三种操作，结局只用颜色表示（成功绿、失败红、生成中灰，无逐行状态图标），折叠行只显示一行摘要（`status` 取当前标题行，其余去掉重复动词的前缀；`请用 /title …` 类用法错误折叠为「用法错误」，完整提示留在展开体），**每个已结算的行都可展开**并在展开区按宿主命令卡样式呈现完整 `text`，复制动作同样写入完整 `text`；运行中的行没有展开区；无 DOM 环境下复制静默失败而不抛错 |
 | Host 陈旧提示 | 插件激活时记录进程启动时刻；settings `GET` 每次请求都比对该时刻与 `index.js`、`lib/**/*.js` 的最新 mtime（1 秒容差），任一新于进程即返回 `staleModule`，设置弹窗顶部提示「插件代码已更新，需要重启 DSH」。只提示，不阻止保存；读目录失败按"未陈旧"处理，不因诊断失败影响激活 |
 | `/title` 命令语法 | 空行等价 `status`；未知子命令（含已并入 `refresh` 的 `auto`）与 `status`/`refresh` 的多余参数都返回「请用 /title …」形式的提示；`pin` 不带标题时固定当前标题，带标题时改名并固定，没有标题可固定时提示先 `/title refresh` |
 | 失败诊断 | `title-call-failed` 只记录 `route`、`attempt n/总数`、provider 错误码和本地失败类别；不写标题、提示词、响应或原始错误文本 |

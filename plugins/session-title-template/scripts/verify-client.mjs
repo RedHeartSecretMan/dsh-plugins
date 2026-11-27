@@ -1202,6 +1202,17 @@ check('a /title card summarises the report and offers copy plus an expandable bo
   if (findElement(running, n => n.type === 'div' && typeof n.props?.onClick === 'function').length !== 0) {
     throw new Error('a running row has no output yet, so it must not offer the toggle');
   }
+  // A usage hint belongs to the expanded body; the collapsed row only says what kind of failure it was.
+  const hint = '请用 /title refresh（该子命令不接受参数）；「123」是多余的。';
+  const usage = expand(view.component({
+    node: { ...node, args: 'refresh 123', outcome: { kind: 'error', text: hint } },
+  }));
+  if (!textOf(usage).includes('command.usage')) {
+    throw new Error('a usage error must summarise as the usage label, not the whole hint');
+  }
+  if (textOf(usage).includes('「123」')) {
+    throw new Error('the usage hint must stay in the expanded body, not the collapsed row');
+  }
 });
 
 check('plugin detail YAML editor loads, expands full config, validates syntax, saves and resets cleanly', async () => {
