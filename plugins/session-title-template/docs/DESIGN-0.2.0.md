@@ -283,8 +283,8 @@ ctx.inject(['commands'], (commandCtx) => {
 |---|---|---|
 | `/title status` | 返回状态快照（文本） | `describeTitleState` |
 | `/title refresh` | 重新生成标题 | `ctx.sessionTitle.refresh` |
-| `/title pin <text>` | 以用户身份固定标题 | `ctx.sessionTitle.rename` |
-| `/title auto` | 解除固定并重新生成 | `ctx.sessionTitle.refresh`（rename 的 unpin 副作用） |
+| `/title pin [text]` | 带标题时改名并固定；不带标题时固定当前标题（0.2.1 起） | `ctx.sessionTitle.rename` |
+| ~~`/title auto`~~ | 0.2.1 移除：显式 refresh 本身就是解除固定，两个动词行为完全相同 | `ctx.sessionTitle.refresh` |
 
 **命令的定位**：`/title` 是「在会话里直接操作」的入口，也是 Client 调 Host 的通路。菜单的固定标题项刻意**不走** `/title pin`，改用 `ctx.sessions.using(id, {}, ref => ref.binding.session.rename(title))`（理由见 §3.4.2）——命令的活会话限制让它不适合从侧边栏操作冷会话。两条路径最终都落到同一个 `sessionTitle.rename`，语义一致。
 
@@ -363,7 +363,7 @@ export async function applyBackfill(ctx, deps, ids) → { updated, failed }
 |---|---|---|
 | 重新生成标题 | `/title refresh`（命令） | 不可用，隐藏该项 |
 | 固定当前标题 | `ctx.sessions.using(id, {}, ref => ref.binding.session.rename(title))` | `ctx.sessions.using(id, {}, ref => ref.binding.session.rename(title))` |
-| 恢复自动命名 | `/title auto`（命令） | 不可用，隐藏该项 |
+| 恢复自动命名 | `/title refresh`（命令；显式刷新即解除固定） | 不可用，隐藏该项 |
 | 查看命名状态 | `/title status`（命令） | 读投影快照，只展示轻量字段 |
 
 **为什么这样分流**：

@@ -1794,23 +1794,20 @@ window.__ModuleLoader__.load({
       return h('div', { style: { minWidth: 0 } });
     }
 
-    /** Verbs `/title` accepts; anything else falls back to the default one. */
-    const COMMAND_VERBS = ['status', 'refresh', 'pin', 'auto'];
-
     /**
      * The verb a `/title` invocation used.
      *
-     * The Host card labels every row with the command name alone, so four
-     * different operations read as four identical rows. The verb is what
-     * distinguishes them, and a bare `/title` is `status`.
+     * The Host card labels every row with the command name alone, so different
+     * operations read as identical rows. The verb is what distinguishes them,
+     * and a bare `/title` is `status`. A verb this build does not know is shown
+     * as typed, so the row matches the mistake the error text explains.
      *
      * @param node - Command row node.
-     * @returns One of {@link COMMAND_VERBS}.
+     * @returns The lowercased first token, or `status` for a bare command.
      */
     function commandVerb(node) {
       const raw = typeof node?.args === 'string' ? node.args.trim() : '';
-      const first = raw === '' ? 'status' : raw.split(/\s+/u)[0].toLowerCase();
-      return COMMAND_VERBS.includes(first) ? first : 'status';
+      return raw === '' ? 'status' : raw.split(/\s+/u)[0].toLowerCase();
     }
 
     /** Lead-ins that only repeat the verb already shown as a chip. */

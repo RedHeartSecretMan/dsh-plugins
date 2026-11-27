@@ -8,8 +8,16 @@
  * @module session-title-template/title-command
  */
 
-/** Verbs the command accepts, in the order the help line lists them. */
-const VERBS = ['status', 'refresh', 'pin', 'auto'];
+/**
+ * Verbs the command accepts, in the order the help line lists them.
+ *
+ * They mirror the session menu: `status` is 查看状态, `refresh` is 自动生成
+ * (regenerate and unpin), and `pin` is 固定当前 with an optional title, so the
+ * same verb also covers 重命名. There is no separate "restore automatic naming"
+ * verb because regenerating already unpins — a second verb would do the same
+ * work under a different label.
+ */
+const VERBS = ['status', 'refresh', 'pin'];
 
 /** Verb that needs no further input, used when the line carries nothing. */
 const DEFAULT_VERB = 'status';
@@ -21,7 +29,7 @@ const DEFAULT_VERB = 'status';
  * about the title, not invoking nothing.
  *
  * @param rawInput - Text after the command name.
- * @returns `{ verb }`, `{ verb, title }`, or `{ error, message }`.
+ * @returns `{ verb }`, `{ verb, title }` (pin only), or `{ error, message }`.
  */
 export function parseTitleCommand(rawInput) {
   const text = typeof rawInput === 'string' ? rawInput.trim() : '';
@@ -32,14 +40,13 @@ export function parseTitleCommand(rawInput) {
   if (!VERBS.includes(verb)) {
     return {
       error: 'unknown-verb',
-      message: `请用 /title status、refresh、auto 或 /title pin <完整标题>；「${verb}」不是可用的子命令。`,
+      message: `请用 /title status、refresh 或 /title pin [完整标题]；「${verb}」不是可用的子命令。`,
     };
   }
   if (verb === 'pin') {
-    if (rest === '') {
-      return { error: 'pin-needs-title', message: '请用 /title pin <完整标题>' };
-    }
-    return { verb, title: rest };
+    // Pin the current title when no argument is given; a title argument also
+    // renames, which is what the menu's 重命名 does.
+    return rest === '' ? { verb } : { verb, title: rest };
   }
   // The other verbs take no input; silently ignoring arguments would hide a typo.
   if (rest !== '') {

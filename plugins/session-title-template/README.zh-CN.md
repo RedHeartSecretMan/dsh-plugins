@@ -131,7 +131,7 @@ DSH 会阻止普通自动请求覆盖手动标题。界面的**显式刷新**有
   - **查看状态**：打开与当前界面语言一致的 `shell.overlay` 模态框，展示当前标题与状态徽章、未恢复的最近失败与建议、内置规则、`AGENTS.md` 补充来源清单及探针结论；通过 owner 鉴权的只读 `GET /session-title-template/status` 路由同时支持活会话与冷会话，不恢复冷会话 Agent，也不修改会话日志。
   - **命名设置**：打开 4-Tab 图形配置弹窗——**格式**（实时标题预览，下分「标题」与「日期」两张卡片，覆盖 `template`、标题语言、主题长度、中英间距、形式与时区）、**类型**（下分「策略」与可折叠「词表」两张卡片：策略中独立维护 `fallbackType` 及可增删的临时类型与各自细化次数，词表专注维护类型名称、分类说明与恢复默认词表）、**模型**（合并为「标题生成」单卡片，基于 `ctx.llm` 自动发现的下拉菜单 + 手动输入入口，依次配置主代理、子代理 `subagentRoute` 与兜底 `fallbackRoute`）、**行为**（下分「常规参数」与可折叠「高级参数」，涵盖 AGENTS.md 补充规则开关与读取上限、端点探针、历史补全及 `maxInputBytes` / `maxOutputTokens` / `timeoutMs` / `retryAttempts` / `retryDelayMs`）。
 - **插件详情页 YAML 编辑器**（`plugins.bundle.config`）：在 DSH「插件管理」中点开「会话标题模板」详情页，即可面向开发者直接编辑本插件完整的 `config` YAML（含 `backfill.retitle`），支持一键展开完整默认配置、保存前校验 YAML 语法与配置 schema、一键恢复默认配置。两处设置入口均通过 owner 鉴权的 `GET`/`POST /session-title-template/settings` 路由经 Harness 配置编辑器原子写盘，保留 profile patch 中的注释、其他插件配置与 `!!js` 表达式；保存仅重载本插件（取消进行中的标题请求），未改动时不写盘，只读 profile 或被上层覆盖的配置会明确提示。
-- **`/title` 命令**：在任意活会话中可直接输入 `/title`（或 `/title status`）、`/title refresh`、`/title pin <标题>`、`/title auto`。
+- **`/title` 命令**：在任意活会话中可直接输入 `/title`（或 `/title status`）查看、`/title refresh` 重新生成并解除固定、`/title pin [标题]` 固定当前标题（带标题则同时改名）。
 
 ## 明确改名与重新生成
 

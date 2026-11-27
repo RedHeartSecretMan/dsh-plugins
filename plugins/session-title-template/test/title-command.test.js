@@ -6,7 +6,14 @@ const { parseTitleCommand, renderTitleStatus, formatTitleFailure } = await impor
 test('a bare verb is recognized', () => {
   assert.deepEqual(parseTitleCommand('status'), { verb: 'status' });
   assert.deepEqual(parseTitleCommand('refresh'), { verb: 'refresh' });
-  assert.deepEqual(parseTitleCommand('auto'), { verb: 'auto' });
+  assert.deepEqual(parseTitleCommand('pin'), { verb: 'pin' }, 'pin alone pins the current title');
+});
+
+test('the verbs mirror the session menu, and auto is not one of them', () => {
+  const parsed = parseTitleCommand('auto');
+  assert.equal(parsed.error, 'unknown-verb');
+  assert.match(parsed.message, /refresh/u);
+  assert.doesNotMatch(parsed.message, /auto 或/u, 'auto must not be advertised after it merged into refresh');
 });
 
 test('the pin verb keeps the rest of the line as the title', () => {
@@ -33,14 +40,8 @@ test('an unknown verb is rejected with a 请用 hint, like the pin prompt', () =
   assert.match(parsed.message, /frobnicate/u);
 });
 
-test('pin without a title is rejected', () => {
-  const parsed = parseTitleCommand('pin');
-  assert.equal(parsed.error, 'pin-needs-title');
-  assert.equal(parsed.message, '请用 /title pin <完整标题>');
-});
-
 test('a verb that takes no input rejects a stray argument instead of ignoring it', () => {
-  for (const [line, verb] of [['refresh now', 'refresh'], ['auto please', 'auto'], ['status all', 'status']]) {
+  for (const [line, verb] of [['refresh now', 'refresh'], ['status all', 'status']]) {
     const parsed = parseTitleCommand(line);
     assert.equal(parsed.error, 'unexpected-argument', line);
     assert.match(parsed.message, /^请用 \/title /u, line);

@@ -56,7 +56,7 @@ function fixture({ session = { id: 'S1' }, describe, refresh, rename, describeEr
   const run = (rawInput, overrides = {}) => command.handler({
     agent: { session }, rawInput, attachments: [], signal: new AbortController().signal, ...overrides,
   });
-  return { command, run, calls, notes, records, registered };
+  return { command, run, calls, notes, records, registered, setCurrent: value => { current = value; } };
 }
 
 test('the command name is a lowercase slash name', () => {
@@ -116,20 +116,42 @@ test('pin fixes the title through the official service', async () => {
   assert.deepEqual(f.calls.rename, [{ session: 'S1', title: '[1124][文档] 我的标题' }]);
 });
 
-test('pin rejects an empty title through the parser', async () => {
+test('pin without a title pins what the session already shows', async () => {
   const f = fixture();
   const result = await f.run('pin');
+  assert.equal(result.kind, 'success');
+  assert.match(result.text, /已固定：\[1124\]\[修复\] 旧标题/u);
+  assert.deepEqual(f.calls.rename, [{ session: 'S1', title: '[1124][修复] 旧标题' }], 'the current title is pinned, not a new one');
+  assert.deepEqual(f.calls.refresh, [], 'pinning never calls the model');
+});
+
+test('pin with a title renames and pins that title', async () => {
+  const f = fixture();
+  const result = await f.run('pin 我的标题');
+  assert.equal(result.kind, 'success');
+  assert.deepEqual(f.calls.rename, [{ session: 'S1', title: '我的标题' }]);
+});
+
+test('pin without a session title explains how to get one first', async () => {
+  const f = fixture();
+  f.setCurrent(undefined);
+  const result = await f.run('pin');
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /pin/u);
+  assert.match(result.text, /\/title refresh/u);
   assert.deepEqual(f.calls.rename, []);
 });
 
-test('auto unpins by regenerating, and says so', async () => {
+test('refresh regenerates and says whether the pin was released', async () => {
   const f = fixture();
-  const result = await f.run('auto');
-  assert.equal(result.kind, 'success');
-  assert.match(result.text, /自动/u);
-  assert.deepEqual(f.calls.refresh, ['S1'], 'unpinning is an explicit refresh');
+  const released = await f.run('refresh');
+  assert.equal(released.kind, 'success');
+  assert.match(released.text, /新标题：\[1124\]\[修复\] 新标题/u);
+  assert.deepEqual(f.calls.refresh, ['S1']);
+  assert.doesNotMatch(released.text, /已解除固定/u, 'an unpinned session has no pin to release');
+
+  f.setCurrent({ title: '固定过的标题', source: { kind: 'user' }, messageSeqs: [1] });
+  const fromPinned = await f.run('refresh');
+  assert.match(fromPinned.text, /已解除固定，自动命名恢复/u);
 });
 
 test('an unknown verb is a usage error, not a crash', async () => {

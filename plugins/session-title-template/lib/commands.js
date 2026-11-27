@@ -31,8 +31,8 @@ export function registerTitleCommands(ctx, { state, describe, refresh }) {
   const pin = (session, title) => ctx.sessionTitle.rename(session, title);
   ctx.commands.register({
     name: TITLE_COMMAND_NAME,
-    description: '查看或修改当前会话的标题：查看命名规则与来源、重新生成、固定、恢复自动命名。',
-    input: { hint: 'status · refresh · auto · pin <完整标题>' },
+    description: '查看或修改当前会话的标题：查看命名规则与来源、重新生成并恢复自动命名、固定当前标题或固定一个新标题。',
+    input: { hint: 'status · refresh · pin [完整标题]' },
     async handler(invocation) {
       const session = invocation.agent?.session;
       if (!session) return { kind: 'error', text: '/title 只能在会话内使用。' };
@@ -82,7 +82,13 @@ async function run(parsed, session, signal, deps) {
     return { kind: 'success', text: renderTitleStatus(snapshot) };
   }
   if (parsed.verb === 'pin') {
-    const accepted = pin(session, parsed.title);
+    // No argument pins what the session already shows (menu: 固定当前); an
+    // argument replaces the title and pins that (menu: 重命名 + 固定).
+    const target = parsed.title ?? deps.sessionTitle.get(session)?.title;
+    if (typeof target !== 'string' || target.trim() === '') {
+      return { kind: 'error', text: '会话还没有标题；先 /title refresh 生成一个，再用 /title pin 固定。' };
+    }
+    const accepted = pin(session, target);
     // Read the live title back: a write that was accepted into memory but not
     // reflected in the service is not a success worth claiming.
     const actual = deps.sessionTitle.get(session);
@@ -91,16 +97,20 @@ async function run(parsed, session, signal, deps) {
     }
     return {
       kind: 'success',
-      text: `已固定：${actual.title}\n自动命名不再覆盖；用 /title auto 可恢复自动命名。`,
+      text: `已固定：${actual.title}\n自动命名不再覆盖；/title refresh 可重新生成并恢复自动命名。`,
     };
   }
-  // refresh and auto both regenerate; auto exists so the intent is explicit.
+  // Regenerating is also how automatic naming resumes: the Host treats an
+  // explicit refresh as a release of the pin, so no separate verb is needed.
+  const wasPinned = deps.sessionTitle.get(session)?.source?.kind === 'user';
   const title = await refresh(session, signal);
   if (title === undefined) {
     return { kind: 'error', text: '会话还没有可用于生成标题的用户消息。' };
   }
-  if (parsed.verb === 'auto') {
-    return { kind: 'success', text: `已恢复自动命名：${title.title}` };
-  }
-  return { kind: 'success', text: `新标题：${title.title}` };
+  return {
+    kind: 'success',
+    text: wasPinned
+      ? `新标题：${title.title}\n已解除固定，自动命名恢复。`
+      : `新标题：${title.title}`,
+  };
 }

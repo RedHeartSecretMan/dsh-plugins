@@ -1187,7 +1187,7 @@ check('a /title card summarises the report and offers copy plus an expandable bo
   // Copying without a DOM must fail quietly instead of throwing into the transcript.
   await copy.props.onClick({ stopPropagation() {} });
   const oneLine = expand(view.component({
-    node: { ...node, args: 'pin 示例标题', outcome: { kind: 'success', text: '已固定：示例标题\n自动命名不再覆盖；用 /title auto 可恢复自动命名。' } },
+    node: { ...node, args: 'pin 示例标题', outcome: { kind: 'success', text: '已固定：示例标题\n自动命名不再覆盖；/title refresh 可重新生成并恢复自动命名。' } },
   }));
   // Every settled row can reveal the command's own output, not only the long ones.
   const header = findElement(oneLine, n => n.type === 'div' && typeof n.props?.onClick === 'function')[0];
