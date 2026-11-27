@@ -1179,18 +1179,25 @@ check('a /title card summarises the report and offers copy plus an expandable bo
   if (findElement(collapsed, n => n.type === 'pre').length !== 0) {
     throw new Error('the report body must start collapsed');
   }
-  const expandBtn = findElement(collapsed, n => n.type === 'button' && n.props['aria-label'] === 'command.expand')[0];
-  if (expandBtn === undefined) throw new Error('the row must offer an expand action for the multi-line report');
-  expandBtn.props.onClick();
+  if (textOf(collapsed).trim().startsWith('titlestatus') === false) {
+    throw new Error('the row must name the command and its verb chip');
+  }
   const copy = findElement(collapsed, n => n.type === 'button' && n.props['aria-label'] === 'command.copy')[0];
   if (copy === undefined) throw new Error('the row must offer a copy action');
   // Copying without a DOM must fail quietly instead of throwing into the transcript.
-  await copy.props.onClick();
-  const oneLine = expand(view.component({ node: { ...node, outcome: { kind: 'success', text: '会话标题已固定：示例标题' } } }));
+  await copy.props.onClick({ stopPropagation() {} });
+  const oneLine = expand(view.component({
+    node: { ...node, args: 'pin 示例标题', outcome: { kind: 'success', text: '会话标题已固定：示例标题' } },
+  }));
   if (findElement(oneLine, n => n.type === 'pre').length !== 0) {
     throw new Error('a single-line result stays a single row');
   }
-  if (!textOf(oneLine).includes('会话标题已固定：示例标题')) throw new Error('a single-line result is shown as its own summary');
+  // The verb the invocation used is the chip, so four operations never read alike.
+  if (!textOf(oneLine).includes('pin')) throw new Error('a pin invocation must show its own verb chip');
+  if (!textOf(oneLine).includes('示例标题')) throw new Error('a pin result summarises the pinned title without the lead-in');
+  if (textOf(oneLine).includes('会话标题已固定：')) {
+    throw new Error('the summary repeats a lead-in the verb chip already states');
+  }
 });
 
 check('plugin detail YAML editor loads, expands full config, validates syntax, saves and resets cleanly', async () => {

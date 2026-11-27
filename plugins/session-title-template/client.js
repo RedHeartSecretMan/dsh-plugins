@@ -139,12 +139,6 @@ window.__ModuleLoader__.load({
       { d: 'M2.25 7C2.25 6.31 2.81 5.75 3.5 5.75H9C9.69 5.75 10.25 6.31 10.25 7V12.5C10.25 13.19 9.69 13.75 9 13.75H3.5C2.81 13.75 2.25 13.19 2.25 12.5V7Z' },
     ];
 
-    /** Angle brackets: the command channel, matching the host's API outline icon. */
-    const API_PARTS = [
-      { d: 'M5.5 4.5L2 8L5.5 11.5' },
-      { d: 'M10.5 4.5L14 8L10.5 11.5' },
-    ];
-
     /** Document-relative Host HTTP routes registered on `ctx.webServer`. */
     const STATUS_ROUTE = 'session-title-template/status';
     const REFRESH_ROUTE = 'session-title-template/refresh';
@@ -1800,23 +1794,59 @@ window.__ModuleLoader__.load({
       return h('div', { style: { minWidth: 0 } });
     }
 
+    /** Verbs `/title` accepts; anything else falls back to the default one. */
+    const COMMAND_VERBS = ['status', 'refresh', 'pin', 'auto'];
+
+    /**
+     * The verb a `/title` invocation used.
+     *
+     * The Host card labels every row with the command name alone, so four
+     * different operations read as four identical rows. The verb is what
+     * distinguishes them, and a bare `/title` is `status`.
+     *
+     * @param node - Command row node.
+     * @returns One of {@link COMMAND_VERBS}.
+     */
+    function commandVerb(node) {
+      const raw = typeof node?.args === 'string' ? node.args.trim() : '';
+      const first = raw === '' ? 'status' : raw.split(/\s+/u)[0].toLowerCase();
+      return COMMAND_VERBS.includes(first) ? first : 'status';
+    }
+
+    /** Lead-ins that only repeat the verb already shown as a chip. */
+    const SUMMARY_LEAD_INS = [
+      /^会话标题已固定：/u,
+      /^会话标题已重新生成：/u,
+      /^已恢复自动命名，新标题：/u,
+    ];
+
     /**
      * Derive the one-line summary a `/title` card shows while collapsed.
      *
-     * The Host renders a command's whole `text` in the collapsed row, so a
-     * multi-line status report turns into an unreadable wall. The title line is
-     * the useful summary; every other verb already answers in one line.
+     * `status` answers with a multi-line report whose title line is the useful
+     * summary; the other verbs answer in one line that starts by restating the
+     * verb, which the row already shows as a chip.
      *
      * @param text - The settled command output.
-     * @returns The first line worth reading.
+     * @param verb - The invocation's verb.
+     * @returns The line worth reading in the collapsed row.
      */
-    function commandSummary(text) {
+    function commandSummary(text, verb) {
       const lines = String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
       if (lines.length === 0) return '';
-      const heading = lines.indexOf('当前标题');
-      const titled = heading === -1 ? undefined : lines[heading + 1];
-      const titleLine = titled !== undefined && titled.startsWith('  来源') === false ? titled : undefined;
-      return titleLine ?? lines[0];
+      if (verb === 'status') {
+        const heading = lines.indexOf('当前标题');
+        const titled = heading === -1 ? undefined : lines[heading + 1];
+        if (titled !== undefined && titled.startsWith('来源') === false) return titled;
+      }
+      const first = lines[0];
+      for (const leadIn of SUMMARY_LEAD_INS) {
+        if (leadIn.test(first)) {
+          const rest = first.replace(leadIn, '').trim();
+          if (rest !== '') return rest;
+        }
+      }
+      return first;
     }
 
     /** Copy text to the clipboard, falling back to a hidden selection. */
@@ -1844,8 +1874,8 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Compact `/title` row: a short summary, an expandable full report, and a
-     * copy action. It replaces the Host's generic command card through
+     * One `/title` row: verb chip, one-line summary, an expandable full report,
+     * and a copy action. It replaces the Host's generic command card through
      * `conversation.chat.commandview`, keyed by the `title` command name.
      */
     function TitleCommandCard({ node, t }) {
@@ -1854,13 +1884,19 @@ window.__ModuleLoader__.load({
       const [hovered, setHovered] = React.useState(false);
       const outcome = node?.outcome ?? null;
       const text = outcome?.text;
+      const verb = commandVerb(node);
       const state = outcome === null ? 'running' : outcome.kind === 'error' ? 'error' : 'ok';
       const summary = outcome === null
         ? t('command.running')
-        : text !== undefined ? commandSummary(text) : state === 'error' ? t('command.failed') : t('command.done');
+        : text !== undefined ? commandSummary(text, verb) : state === 'error' ? t('command.failed') : t('command.done');
       const body = typeof text === 'string' && text.includes('\n') ? text : null;
       const copyable = typeof text === 'string' && text.trim() !== '';
-      const tone = state === 'error' ? 'var(--dsw-alias-state-warn-label)' : 'var(--dsw-alias-label-secondary)';
+
+      const statusPaint = state === 'error'
+        ? { parts: WARNING_PARTS, color: 'var(--dsw-alias-state-warn-primary)' }
+        : state === 'ok'
+          ? { parts: CHECK_PARTS, color: 'var(--dsw-alias-state-success-primary)' }
+          : undefined;
 
       const onCopy = () => {
         void copyText(String(text)).then((ok) => {
@@ -1879,72 +1915,91 @@ window.__ModuleLoader__.load({
         onMouseLeave: () => setHovered(false),
       },
         h('div', {
+          onClick: body === null ? undefined : () => setExpanded((value) => !value),
           style: {
             display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
             padding: '2px 6px', borderRadius: 8,
+            cursor: body === null ? 'default' : 'pointer',
             background: hovered ? 'var(--dsw-alias-interactive-bg-hover)' : 'transparent',
             transition: 'background-color 120ms ease',
           },
         },
-          body === null ? null : h('button', {
-            type: 'button',
-            'aria-label': expanded ? t('command.collapse') : t('command.expand'),
-            'aria-expanded': expanded,
-            onClick: () => setExpanded((value) => !value),
+          h('span', {
+            'aria-hidden': true,
             style: {
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 16, height: 16, padding: 0, border: 0, borderRadius: 4,
-              background: 'transparent', color: 'var(--dsw-alias-label-tertiary)',
-              cursor: 'pointer', flex: 'none',
+              width: 14, flex: 'none', color: 'var(--dsw-alias-label-tertiary)',
+              opacity: body === null ? 0 : 1,
             },
           }, glyph(expanded ? CHEVRON_DOWN_PARTS : CHEVRON_RIGHT_PARTS, 12, 1.4)),
-          h('span', {
-            style: { color: 'var(--dsw-alias-label-tertiary)', flex: 'none' },
-          }, glyph(API_PARTS, 13)),
+          statusPaint === undefined
+            ? h('span', {
+              'aria-hidden': true,
+              style: {
+                width: 7, height: 7, borderRadius: '50%', flex: 'none',
+                background: 'var(--dsw-alias-label-tertiary)',
+              },
+            })
+            : h('span', {
+              'aria-hidden': true,
+              style: { display: 'inline-flex', flex: 'none', color: statusPaint.color },
+            }, glyph(statusPaint.parts, 12, 1.5)),
           h('span', {
             style: {
-              flex: 'none', fontWeight: 500,
+              flex: 'none', fontWeight: 400,
               color: state === 'running' ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-label-primary)',
             },
           }, 'title'),
           h('span', {
+            style: {
+              flex: 'none', padding: '0 5px', height: 16, borderRadius: 5,
+              display: 'inline-flex', alignItems: 'center',
+              fontSize: 11, lineHeight: '16px', fontWeight: 500,
+              background: 'var(--dsw-alias-markdown-inline-code)',
+              border: '1px solid var(--dsw-alias-border-l1)',
+              color: state === 'error' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)',
+            },
+          }, verb),
+          h('span', {
             'aria-hidden': true,
-            style: { flex: 'none', color: 'var(--dsw-alias-label-tertiary)', padding: '0 2px' },
-          }, '·'),
+            style: {
+              flex: 'none', width: 2, height: 2, margin: '0 3px',
+              borderRadius: 1, background: 'var(--dsw-alias-label-caption)',
+            },
+          }),
           h('span', {
             title: summary,
             style: {
-              flex: '1 1 auto', minWidth: 0, color: tone,
+              flex: '1 1 auto', minWidth: 0,
+              color: state === 'error' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             },
           }, summary),
           copyable ? h('button', {
             type: 'button',
             'aria-label': copied ? t('command.copied') : t('command.copy'),
-            onClick: onCopy,
+            title: t('command.copy'),
+            onClick: (event) => { event.stopPropagation(); onCopy(); },
             style: {
-              display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none',
-              height: 22, padding: '0 8px', border: '1px solid var(--dsw-alias-border-l1)',
-              borderRadius: 6, background: 'var(--dsw-alias-bg-layer-2)',
-              color: copied ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-label-secondary)',
-              fontSize: 11.5, lineHeight: '16px', fontFamily: 'inherit', cursor: 'pointer',
-              opacity: hovered || copied ? 1 : 0.7,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none',
+              width: 22, height: 22, padding: 0, border: 0, borderRadius: 6,
+              background: 'transparent',
+              color: copied ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-label-tertiary)',
+              cursor: 'pointer',
+              opacity: hovered || copied ? 1 : 0.55,
               transition: 'opacity 120ms ease, color 120ms ease',
             },
-          },
-            glyph(copied ? CHECK_PARTS : COPY_PARTS, 12, 1.4),
-            copied ? t('command.copied') : t('command.copy'),
-          ) : null,
+          }, glyph(copied ? CHECK_PARTS : COPY_PARTS, 13, 1.4)) : null,
         ),
         expanded && body !== null ? h('pre', {
           style: {
-            margin: '0 0 0 22px', padding: '10px 12px', borderRadius: 10,
-            background: 'var(--dsw-alias-markdown-inline-code)',
-            border: '1px solid var(--dsw-alias-border-l1)',
-            fontFamily: CODE_FONT, fontSize: 12, lineHeight: '18px', tabSize: 2,
-            whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
-            maxHeight: 360, overflow: 'auto',
+            maxHeight: 260, margin: '4px 0 4px 20px', padding: '12px 16px',
+            overflow: 'auto', border: '0.5px solid var(--dsw-alias-border-l1)',
+            borderRadius: 'var(--dsw-radius-lg, 10px)',
+            background: 'var(--dsw-alias-markdown-code-block)',
             color: 'var(--dsw-alias-label-primary)',
+            font: 'var(--dsw-font-markdown-code-block-small)',
+            whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', tabSize: 2,
           },
         }, body) : null,
       );

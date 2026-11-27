@@ -32,7 +32,7 @@ export function registerTitleCommands(ctx, { state, describe, refresh }) {
   ctx.commands.register({
     name: TITLE_COMMAND_NAME,
     description: '查看或修改当前会话的标题：查看命名规则与来源、重新生成、固定、恢复自动命名。',
-    input: { hint: '<status|refresh|pin <标题>|auto>' },
+    input: { hint: 'status · refresh · auto · pin <完整标题>' },
     async handler(invocation) {
       const session = invocation.agent?.session;
       if (!session) return { kind: 'error', text: '/title 只能在会话内使用。' };

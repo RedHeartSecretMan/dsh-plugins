@@ -18,7 +18,7 @@
 | 命名设置路由 | owner 鉴权的 `GET`/`POST /session-title-template/settings`：仅接受扁平白名单字段，保存前用 `resolveConfig` 校验，经 `configEditor.edit(ctx.fiber.entry, …)` 持久化，不直接改写 `cordis.patch.yml`；无有效变化时不写盘，保存中拒绝并发保存，被高层覆盖或无法寻址的条目分别返回 `config-overridden` / `editor-unavailable`，错误不泄漏异常正文 |
 | owner 鉴权回退 | 请求未带 Peer 参数时（Harness 0.2.2 的 `handler(req, res)` 调用方式）回退到环回信任判定：`127.0.0.1`/`::1` 等文本环回来源被接受，非环回来源仍返回 403；Peer 存在时只按 Peer 判定，回退不参与 |
 | HTTP 状态与刷新路由 | owner 鉴权的 `GET /session-title-template/status`（同时支持活会话与经 `sessionQuery` 只读的冷会话）与 `POST /session-title-template/refresh`（活会话无痕刷新），不向对话流追加命令块，错误分类返回且不泄漏异常正文 |
-| `/title` 命令卡片 | 通过 `conversation.chat.commandview` 以 `title` 为键接管该命令的行渲染：折叠行只显示一行摘要（`status` 取当前标题行），多行输出在展开区以 `<pre>` 呈现，复制动作写入完整 `text`；单行结果不产生展开区；无 DOM 环境下复制静默失败而不抛错 |
+| `/title` 命令卡片 | 通过 `conversation.chat.commandview` 以 `title` 为键接管该命令的行渲染：动词片（`status`/`refresh`/`pin`/`auto`）区分四种操作，对勾/警告/圆点表示结局，折叠行只显示一行摘要（`status` 取当前标题行，其余去掉重复动词的前缀），多行输出在展开区按宿主命令卡样式呈现，复制动作写入完整 `text`；单行结果不产生展开区；无 DOM 环境下复制静默失败而不抛错 |
 | 失败诊断 | `title-call-failed` 只记录 `route`、`attempt n/总数`、provider 错误码和本地失败类别；不写标题、提示词、响应或原始错误文本 |
 | 输入预算 | 按最终 JSON 框架的 UTF-8 字节计算，包含 currentTitle anchor、转义和包装；优先保留首条和最新消息 |
 | 配置 | 字段、路由成对、词表和占位符校验；拒绝未知字段和已移除的旧别名 `maxExploreRefinements` / 顶层 `retitle`；`backfill.fallbackRoute` 被拒绝并提示迁移到顶层 `fallbackRoute`（该兜底路由服务于全部标题请求，与 `backfill.enabled` 无关）；`uiLanguage` 仅接受 `auto`/`zh`/`en`，`fallbackTruncation` 仅接受 `natural`/`hard`，`subagentRoute` 为成对 `{ provider, model }`，`subagentDelegationLabel` 仅接受 boolean，`types[].maxRefinements` 仅在接受 `provisional: true` 时生效且为 `1` 至 `100` 整数；`agentsInstructions` 仅接受 boolean `enabled` 和 `256` 至 `65536` 整数 `maxBytes`，解析结果独立冻结 |
